@@ -1,0 +1,33 @@
+# Credentials and private content
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+settings.json
+credentials.json
+chat-history/
+captures/
+# Generated products
+.DS_Store
+__pycache__/
+*.py[cod]
+.build/
+bin/
+obj/
+dist/
+*.app/
+*.exe
+*.dll
+*.pdb
+*.zip
+*.log
+work/
+.vs/
+.idea/
