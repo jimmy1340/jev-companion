@@ -1,0 +1,70 @@
+{
+  "conversation_id": "demo:dinner-v1",
+  "conversation_title": "演示 · 周末约饭（虚构）",
+  "source": "demo",
+  "save_history": false,
+  "confirmed_cloud": false,
+  "messages": [
+    {
+      "id": "demo-current-1",
+      "sender": "other",
+      "text": "你今天是不是又忘了我跟你说过什么？"
+    },
+    {
+      "id": "demo-current-2",
+      "sender": "self",
+      "text": "让我先核对一下，不想随口回答。"
+    },
+    {
+      "id": "demo-current-3",
+      "sender": "other",
+      "text": "那你说。"
+    },
+    {
+      "id": "demo-current-4",
+      "sender": "self",
+      "text": "你昨天提到周末一起吃饭，希望这次我来安排。"
+    },
+    {
+      "id": "demo-current-5",
+      "sender": "other",
+      "text": "所以呢？"
+    },
+    {
+      "id": "demo-current-6",
+      "sender": "self",
+      "text": "我来找两家餐厅，晚上把时间和地址发给你确认。"
+    },
+    {
+      "id": "demo-current-7",
+      "sender": "other",
+      "text": "别又只说不做。"
+    },
+    {
+      "id": "demo-current-8",
+      "sender": "self",
+      "text": "好，我现在就查，定好先和你确认。"
+    },
+    {
+      "id": "demo-current-9",
+      "sender": "other",
+      "text": "这还差不多。"
+    }
+  ],
+  "history": [
+    {
+      "id": "demo-history-1",
+      "sender": "other",
+      "text": "周末想一起出去吃饭，这次你来选餐厅可以吗？",
+      "timestamp": "虚构场景 · 昨天",
+      "source": "demo"
+    },
+    {
+      "id": "demo-history-2",
+      "sender": "self",
+      "text": "可以，我们再确认一下时间。",
+      "timestamp": "虚构场景 · 昨天",
+      "source": "demo"
+    }
+  ]
+}
