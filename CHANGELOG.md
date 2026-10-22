@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- **Apple-style UI Refresh**: Redesigned macOS SwiftUI and Windows WPF views with iMessage-inspired blue and light gray bubbles, refined hairline analysis cards with probability progress bars, and unified blue primary action buttons.
+- **Keyboard Shortcuts**: Added platform shortcuts for core actions (macOS: `⌘R` refresh, `⌘Enter` analyze, `Esc` stop; Windows: `Ctrl+R` refresh, `Ctrl+Enter` analyze, `Esc` stop, `Ctrl+P` pin).
+- **WeChat Windows OCR Resilience**: Enhanced green bubble detection in `ScreenshotReader.cs` to accurately recognize outgoing messages in both WeChat light and dark modes.
+- **Automated CI/CD Release Pipeline**: Added `.github/workflows/release.yml` to automatically build macOS `.app` (arm64 zip) and Windows single-file standalone installer (`JevCompanion-Setup-win-x64.exe`) upon tag push.
+
 ## 0.1.0 source edition
 
 Initial public packaging of the macOS 0.3 prototype and Windows 0.4.1 preview.
