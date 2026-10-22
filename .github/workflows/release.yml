@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build macOS Application
+        run: |
+          bash macos/test.sh
+          bash macos/build.sh
+          cd dist
+          zip -r JevCompanion-macos-arm64.zip "Jev伴聊.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifact
+          path: dist/JevCompanion-macos-arm64.zip
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build Windows Executable
+        run: |
+          dotnet run --project windows/Tests/Jev.Tests.csproj -c Release
+          dotnet publish windows/App/Jev.Windows.csproj -c Release -r win-x64 --self-contained true -o dist/windows
+          Copy-Item dist/windows/JevCompanion.exe dist/JevCompanion-Setup-win-x64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifact
+          path: dist/JevCompanion-Setup-win-x64.exe
+
+  publish:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-artifact
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-artifact
+          path: release-assets
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release-assets/* \
+            --title "Jev Companion ${{ github.ref_name }}" \
+            --generate-notes
