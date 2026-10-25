@@ -28,10 +28,15 @@ private let chatInk = Color.primary
 private let accentBlue = Color(red: 0.0, green: 0.478, blue: 1.0)
 private let accentBlueDeep = Color(red: 0.0, green: 0.36, blue: 0.92)
 private let bubbleOutgoing = Color(red: 0.04, green: 0.52, blue: 1.0)
-private let bubbleIncoming = adaptive(NSColor(white: 0.91, alpha: 1), NSColor(white: 0.24, alpha: 1))
+private let bubbleOutgoingGrad = LinearGradient(
+    colors: [Color(red: 0.08, green: 0.56, blue: 1.0), Color(red: 0.02, green: 0.46, blue: 0.96)],
+    startPoint: .topLeading, endPoint: .bottomTrailing
+)
+private let bubbleIncoming = adaptive(NSColor(white: 0.92, alpha: 1), NSColor(white: 0.22, alpha: 1))
+private let bubbleIncomingBorder = adaptive(NSColor(white: 0.88, alpha: 1), NSColor(white: 0.28, alpha: 1))
 private let chatPaper = adaptive(NSColor(white: 0.965, alpha: 1), NSColor(white: 0.115, alpha: 1))
 private let jevPaper = adaptive(NSColor.white, NSColor(white: 0.18, alpha: 1))
-private let hairline = Color.primary.opacity(0.09)
+private let hairline = Color.primary.opacity(0.08)
 
 // MARK: - Controls
 
@@ -60,20 +65,22 @@ private struct QuietIconLabel: View {
 }
 
 private struct PillButtonStyle: ButtonStyle {
+    var tint: Color = accentBlue
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        PillLabel(configuration: configuration)
+        PillLabel(configuration: configuration, tint: tint)
     }
 }
 
 private struct PillLabel: View {
     let configuration: ButtonStyleConfiguration
+    var tint: Color = accentBlue
     @Environment(\.isEnabled) private var enabled
     var body: some View {
         configuration.label
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(enabled ? accentBlue : Color.secondary)
+            .foregroundStyle(enabled ? tint : Color.secondary)
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(Capsule().fill((enabled ? accentBlue : Color.primary).opacity(configuration.isPressed ? 0.22 : 0.11)))
+            .background(Capsule().fill((enabled ? tint : Color.primary).opacity(configuration.isPressed ? 0.22 : 0.10)))
     }
 }
 
@@ -90,8 +97,9 @@ private struct PrimaryLabel: View {
         configuration.label
             .foregroundStyle(enabled ? Color.white : Color.secondary)
             .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(enabled ? bubbleOutgoing : Color.primary.opacity(0.08)))
-            .opacity(configuration.isPressed ? 0.85 : 1)
+                .fill(enabled ? AnyShapeStyle(bubbleOutgoingGrad) : AnyShapeStyle(Color.primary.opacity(0.08))))
+            .shadow(color: enabled ? accentBlue.opacity(configuration.isPressed ? 0.12 : 0.24) : Color.clear, radius: 4, y: 1.5)
+            .opacity(configuration.isPressed ? 0.88 : 1)
     }
 }
 
@@ -154,7 +162,23 @@ struct CompanionView: View {
                 Text(model.hasMessages ? model.title : "Jev 伴聊")
                     .font(.system(size: 15, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 5) {
-                    Circle().fill(model.monitoring ? Color.green : Color.secondary.opacity(0.45)).frame(width: 6, height: 6)
+                    if model.monitoring {
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.green).frame(width: 5, height: 5)
+                            Text("跟随中").font(.system(size: 10, weight: .medium)).foregroundStyle(Color.green)
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 1.5)
+                        .background(Capsule().fill(Color.green.opacity(0.12)))
+                    } else if model.mode == .demo {
+                        HStack(spacing: 4) {
+                            Circle().fill(accentBlue).frame(width: 5, height: 5)
+                            Text("示例").font(.system(size: 10, weight: .medium)).foregroundStyle(accentBlue)
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 1.5)
+                        .background(Capsule().fill(accentBlue.opacity(0.10)))
+                    } else {
+                        Circle().fill(Color.secondary.opacity(0.45)).frame(width: 6, height: 6)
+                    }
                     Text(model.mode == .demo ? "虚构聊天 · 实际模型逐条分析" : model.monitoring ? "正在跟随当前微信会话" : "每条对方消息下，都有上下文")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
@@ -162,7 +186,7 @@ struct CompanionView: View {
             Spacer(minLength: 8)
             Button { floating.toggle(); model.setFloating(floating) } label: {
                 Image(systemName: floating ? "pin.fill" : "pin").font(.system(size: 12, weight: .medium))
-            }.buttonStyle(QuietIconButtonStyle(tint: floating ? accentBlue : Color.secondary)).help("窗口置顶")
+            }.buttonStyle(QuietIconButtonStyle(tint: floating ? accentBlue : Color.secondary)).help("窗口置顶 (⌘P)")
             Button { model.showSettings = true } label: {
                 Image(systemName: "ellipsis.circle").font(.system(size: 16, weight: .regular))
             }.buttonStyle(QuietIconButtonStyle()).help("设置与本地记忆")
@@ -262,8 +286,13 @@ struct CompanionView: View {
                     .foregroundStyle(outgoing ? Color.white : chatInk)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 13).padding(.vertical, 8)
-                    .background(outgoing ? bubbleOutgoing : bubbleIncoming,
+                    .background(outgoing ? AnyShapeStyle(bubbleOutgoingGrad) : AnyShapeStyle(bubbleIncoming),
                                 in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(outgoing ? Color.clear : bubbleIncomingBorder.opacity(0.35), lineWidth: 0.5)
+                    )
+                    .shadow(color: outgoing ? accentBlue.opacity(0.18) : Color.black.opacity(0.03), radius: 2, y: 1)
                     .frame(maxWidth: 294, alignment: outgoing ? .trailing : .leading)
                 if !outgoing { messageAnalysis(message) }
             }
@@ -334,31 +363,34 @@ struct CompanionView: View {
 
     private func jevAnnotation(_ a: AnalysisView) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Image(systemName: "sparkles").font(.system(size: 10, weight: .semibold)).foregroundStyle(accentBlue)
-                Text("Jev").font(.system(size: 12, weight: .semibold))
+            HStack(alignment: .center, spacing: 5) {
+                Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold)).foregroundStyle(accentBlue)
+                Text("Jev 深度分析").font(.system(size: 12, weight: .semibold))
                 Spacer(minLength: 4)
-                Text("截至这条消息").font(.system(size: 9)).foregroundStyle(.secondary)
+                Text("截至本条消息").font(.system(size: 9))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.primary.opacity(0.05)))
+                    .foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 5) {
-                sectionTitle("当前可能诉求")
+                sectionTitle("当前可能诉求", icon: "bubble.left.and.exclamationmark.bubble.right")
                 ForEach(topThree(a.needs)) { need in
                     probabilityLine(need.label, probability: need.probability)
                 }
             }
             if a.settled >= 0.75 {
                 VStack(alignment: .leading, spacing: 5) {
-                    sectionTitle("当前分歧是否可能已缓解？")
+                    sectionTitle("当前分歧是否可能已缓解？", icon: "arrow.triangle.merge")
                     yesNoLine(a.settled)
                 }
             } else if let needsHistory = a.needsHistory {
                 VStack(alignment: .leading, spacing: 5) {
-                    sectionTitle("是否需要核对先前记录？")
+                    sectionTitle("是否需要核对先前记录？", icon: "clock.arrow.circlepath")
                     yesNoLine(needsHistory)
                 }
             }
             VStack(alignment: .leading, spacing: 5) {
-                sectionTitle("下一步建议")
+                sectionTitle("下一步建议", icon: "arrowshape.turn.up.right.fill")
                 if !a.actions.isEmpty {
                     ForEach(topThree(a.actions)) { action in
                         probabilityLine(action.label, probability: action.probability)
@@ -368,22 +400,55 @@ struct CompanionView: View {
                     else { Text(a.action).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true) }
                 }
             }
-            HStack(spacing: 5) {
-                Text("对话紧张程度").font(.system(size: 11)).foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                Text(a.tension.isFinite ? String(format: "%.1f / 10", a.tension) : "暂无结果")
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    sectionTitle("对话紧张程度", icon: "gauge.medium")
+                    Spacer(minLength: 4)
+                    tensionBadge(a.tension)
+                }
+                if a.tension.isFinite {
+                    tensionBar(a.tension)
+                }
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 11)
+        .padding(.horizontal, 13).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .jevSurface(radius: 14)
         .shadow(color: Color.black.opacity(0.04), radius: 4, y: 1)
         .textSelection(.enabled)
     }
 
-    private func sectionTitle(_ text: String) -> some View {
-        Text(text).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+    private func sectionTitle(_ text: String, icon: String? = nil) -> some View {
+        HStack(spacing: 4) {
+            if let icon {
+                Image(systemName: icon).font(.system(size: 9, weight: .semibold)).foregroundStyle(accentBlue.opacity(0.85))
+            }
+            Text(text).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+        }
+    }
+
+    private func tensionBadge(_ tension: Double) -> some View {
+        let color: Color = tension < 3.0 ? Color(red: 0.15, green: 0.68, blue: 0.38) : tension < 6.5 ? Color.orange : Color(red: 0.92, green: 0.28, blue: 0.24)
+        let desc: String = tension < 3.0 ? "平和" : tension < 6.5 ? "轻度分歧" : "较紧张"
+        return HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text(tension.isFinite ? "\(desc) · \(String(format: "%.1f", tension))/10" : "暂无结果")
+                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .foregroundStyle(color)
+        }
+        .padding(.horizontal, 7).padding(.vertical, 2.5)
+        .background(Capsule().fill(color.opacity(0.12)))
+    }
+
+    private func tensionBar(_ tension: Double) -> some View {
+        let color: Color = tension < 3.0 ? Color(red: 0.15, green: 0.68, blue: 0.38) : tension < 6.5 ? Color.orange : Color(red: 0.92, green: 0.28, blue: 0.24)
+        return GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.07))
+                Capsule().fill(color.opacity(0.85))
+                    .frame(width: max(3, geometry.size.width * min(1, max(0, tension / 10.0))))
+            }
+        }.frame(height: 3)
     }
 
     private func topThree(_ values: [NeedView]) -> [NeedView] {
@@ -441,11 +506,16 @@ struct CompanionView: View {
             ForEach(Array(a.drafts.enumerated()), id: \.element.id) { index, draft in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("建议 \(index + 1)").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Text("建议 \(index + 1)").font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(accentBlue)
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(accentBlue.opacity(0.08)))
                         Spacer()
                         Button { model.copyDraft(draft) } label: {
                             Label(model.copiedID == draft.id ? "已复制" : "复制", systemImage: model.copiedID == draft.id ? "checkmark" : "doc.on.doc")
-                        }.buttonStyle(PillButtonStyle())
+                        }.buttonStyle(PillButtonStyle(tint: model.copiedID == draft.id ? Color.green : accentBlue))
                     }
                     Text(draft.text).font(.system(size: 13)).lineSpacing(3)
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
@@ -476,16 +546,37 @@ struct CompanionView: View {
     }
 
     private var emptyConversation: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             ZStack {
-                Circle().fill(accentBlue.opacity(0.12)).frame(width: 64, height: 64)
-                Image(systemName: "text.bubble").font(.system(size: 28, weight: .light)).foregroundStyle(accentBlue)
+                Circle().fill(LinearGradient(colors: [accentBlue.opacity(0.16), accentBlue.opacity(0.06)], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "text.bubble.fill")
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(accentBlue)
             }
-            Text(model.mode == .wechat ? "打开一个微信聊天" : model.mode == .manual ? "粘贴你想分析的对话" : "正在准备示例")
-                .font(.system(size: 15, weight: .semibold))
-            Text(model.mode == .wechat ? "点击下方“读取并逐条分析”，\nJev 卡会出现在每条对方消息下方。" : "每条对方气泡下面，\n都会保留这一刻的 Jev 分析。")
-                .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        }.frame(maxWidth: .infinity).padding(.vertical, 60)
+            VStack(spacing: 4) {
+                Text(model.mode == .wechat ? "打开一个微信聊天" : model.mode == .manual ? "粘贴你想分析的对话" : "正在准备示例")
+                    .font(.system(size: 15, weight: .semibold))
+                Text(model.mode == .wechat ? "点击下方「读取并逐条分析」，\n每条对方消息下方都会生成专属分析卡。" : "每条对方气泡下面，\n都会保留这一刻的 Jev 分析。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .lineSpacing(2)
+            }
+            HStack(spacing: 8) {
+                featureBadge("只读不注入", icon: "shield.checkerboard")
+                featureBadge("逐条上下文", icon: "arrow.down.forward.and.arrow.up.backward")
+                featureBadge("人工确认发送", icon: "person.crop.circle.badge.checkmark")
+            }.padding(.top, 4)
+        }.frame(maxWidth: .infinity).padding(.vertical, 48)
+    }
+
+    private func featureBadge(_ text: String, icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 9))
+            Text(text).font(.system(size: 10, weight: .medium))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Capsule().fill(Color.primary.opacity(0.04)))
     }
 
     private var composeBar: some View {
