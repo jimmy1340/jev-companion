@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1
+
+- **Refined Apple-Style Visual Hierarchy**:
+  - **macOS**: Added subtle gradient depth and border contrast to iMessage-style chat bubbles. Added dynamic status chips (active monitoring capsule and demo mode tag) in the header.
+  - **Jev Analysis Cards**: Introduced SF Symbol iconography for each analysis section (诉求、分歧线索、核对记录、建议动作), and a color-coded intuitive gauge badge and progress bar for tension levels (green for calm, orange for mild divergence, red for high tension).
+  - **Empty State Experience**: Redesigned the empty conversation placeholder with multi-layer ambient depth, clear typographic hierarchy, and feature guarantee badges (只读不注入、逐条上下文、人工确认发送).
+  - **Windows WPF**: Upgraded analysis cards with section badge headers, color-coded tension meters, distinct suggestion cards, and unified Apple-blue primary actions.
+- **Platform Parity & Fixes**:
+  - Ensured Windows WPF source files (`MainWindow.cs`, `Program.cs`, `RegionSelector.cs`, `ScreenshotReader.cs`) are fully in sync with the repository.
+
 ## 0.2.0
 
 - **Apple-style UI Refresh**: Redesigned macOS SwiftUI and Windows WPF views with iMessage-inspired blue and light gray bubbles, refined hairline analysis cards with probability progress bars, and unified blue primary action buttons.
