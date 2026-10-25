@@ -30,7 +30,7 @@ public static class ScreenshotReader
             int green = 0, samples = 0;
             for (int y = Math.Max(0, (int)top - 5); y < Math.Min(height, (int)bottom + 5); y += 2)
                 for (int x = Math.Max(0, (int)left - 10); x < Math.Min(width, (int)right + 10); x += 2)
-                { var i = y * stride + x * 4; var b = pixels[i]; var g = pixels[i + 1]; var r = pixels[i + 2]; if (g > 145 && g > r + 25 && g > b + 35) green++; samples++; }
+                { var i = y * stride + x * 4; var b = pixels[i]; var g = pixels[i + 1]; var r = pixels[i + 2]; if ((g > 145 && g > r + 25 && g > b + 35) || (g > 70 && g > r * 1.25 && g > b * 1.35)) green++; samples++; }
             var sender = green > samples * .13 ? "self" : (left < width * .28 && right < width * .93 ? "other" : "unknown");
             if (sender != "unknown" && sender == previousSender && top - previousBottom < Math.Max(8, (bottom - top) * .6) && messages.Count > 0)
                 messages[^1] = messages[^1] with { Text = messages[^1].Text + "\n" + line.Text };

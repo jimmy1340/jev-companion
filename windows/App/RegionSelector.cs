@@ -11,7 +11,7 @@ public sealed class RegionSelector : Window
     public PixelRegion? Selection { get; private set; }
     public RegionSelector(Window owner, WindowFrame frame)
     {
-        Title = "框选微信消息区域"; Owner = owner; FontFamily = owner.FontFamily; Background = MainWindow.Brush("#F3F6F2");
+        Title = "框选微信消息区域"; Owner = owner; FontFamily = owner.FontFamily; Background = MainWindow.Brush("#F5F5F7");
         WindowStartupLocation = WindowStartupLocation.CenterOwner; ResizeMode = ResizeMode.NoResize;
         var scale = Math.Min(1, Math.Min((SystemParameters.WorkArea.Width - 90) / frame.Image.PixelWidth, (SystemParameters.WorkArea.Height - 190) / frame.Image.PixelHeight));
         var width = frame.Image.PixelWidth * scale; var height = frame.Image.PixelHeight * scale;
@@ -25,7 +25,7 @@ public sealed class RegionSelector : Window
         var canvas = new Canvas { Width = width, Height = height, Background = Brushes.Transparent, Cursor = Cursors.Cross, ClipToBounds = true };
         root.Children.Add(canvas);
         canvas.Children.Add(new Image { Source = frame.Image, Width = width, Height = height, Stretch = Stretch.Fill, IsHitTestVisible = false });
-        var rectangle = new Rectangle { Stroke = MainWindow.Brush("#23945A"), StrokeThickness = 2, Fill = new SolidColorBrush(Color.FromArgb(40, 40, 190, 90)), IsHitTestVisible = false }; canvas.Children.Add(rectangle);
+        var rectangle = new Rectangle { Stroke = MainWindow.Brush("#0A84FF"), StrokeThickness = 2, Fill = new SolidColorBrush(Color.FromArgb(46, 10, 132, 255)), IsHitTestVisible = false }; canvas.Children.Add(rectangle);
         Point? start = null;
         void Update(Point point)
         {
