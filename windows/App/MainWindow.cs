@@ -17,7 +17,7 @@ public sealed class MainWindow : Window
     private readonly Dictionary<string, string> errors = new();
     private readonly StackPanel rows = new();
     private readonly ScrollViewer scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-    private readonly TextBlock heading = Text("演示 · 周末约饭", 23, true);
+    private readonly TextBlock heading = Text("演示 · 周末约饭", 21, true);
     private readonly TextBlock status = Text("先设置模型连接，再体验逐条分析。", 12);
     private readonly TextBlock subheading = Text("聊天旁的 Jev 小助手 · Windows 预览版", 12);
     private readonly Button analyze = Button("逐条分析", null, true);
@@ -39,16 +39,17 @@ public sealed class MainWindow : Window
         try { settings = Settings.Load(); _ = settings.Connection(); }
         catch { settings = new(); status.Text = "原连接配置无法解密，请在设置中重新填写。"; }
         Title = "Jev 伴聊 0.4.1"; Width = 560; Height = Math.Min(850, SystemParameters.WorkArea.Height - 40); MinWidth = 430; MinHeight = Math.Min(620, SystemParameters.WorkArea.Height - 40);
-        FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14; Background = Brush("#EDEDED");
+        FontFamily = new FontFamily(UiFont); FontSize = 14; Background = Brush("#F5F5F7"); UseLayoutRounding = true;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var root = new DockPanel(); Content = root;
         var header = new StackPanel { Margin = new Thickness(20, 18, 20, 12) };
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
-        var titleRow = new DockPanel(); var settingsButton = Button("连接设置", (_, _) => SettingsDialog());
+        var rule = new Border { Height = 1, Background = Brush("#E5E5EA") }; DockPanel.SetDock(rule, Dock.Top); root.Children.Add(rule);
+        var titleRow = new DockPanel(); var settingsButton = Button("连接设置", (_, _) => SettingsDialog()); settingsButton.Margin = new Thickness(0, 0, 0, 4);
         DockPanel.SetDock(settingsButton, Dock.Right); titleRow.Children.Add(settingsButton);
         var pin = Button("置顶", (_, _) => { Topmost = !Topmost; }); DockPanel.SetDock(pin, Dock.Right); titleRow.Children.Add(pin);
-        titleRow.Children.Add(heading); header.Children.Add(titleRow);
-        subheading.Foreground = Brush("#858B87"); subheading.Margin = new Thickness(0, 5, 0, 12); header.Children.Add(subheading);
+        heading.TextTrimming = TextTrimming.CharacterEllipsis; titleRow.Children.Add(heading); header.Children.Add(titleRow);
+        subheading.Foreground = Brush("#6E6E73"); subheading.Margin = new Thickness(0, 4, 0, 12); header.Children.Add(subheading);
         var tools = sourceTools; header.Children.Add(tools);
         tools.Children.Add(Button("读取微信", async (_, _) => await ReadWechat()));
         tools.Children.Add(Button("窗口识别", async (_, _) => await ReadWindow()));
@@ -56,25 +57,59 @@ public sealed class MainWindow : Window
         tools.Children.Add(Button("粘贴", (_, _) => PasteDialog()));
         tools.Children.Add(Button("示例", (_, _) => Load(Demo())));
         tools.Children.Add(follow); follow.Click += async (_, _) => await ToggleFollow();
-        var footer = new StackPanel { Background = Brush("#F7F7F7"), Margin = new Thickness(0), Orientation = Orientation.Vertical };
-        DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        var footer = new StackPanel { Background = Brush("#FBFBFD"), Margin = new Thickness(0), Orientation = Orientation.Vertical };
+        DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer); footer.Children.Add(new Border { Height = 1, Background = Brush("#E5E5EA") });
         var footerRow = new DockPanel { Margin = new Thickness(18, 12, 18, 5) };
+        analyze.Padding = new Thickness(12, 10, 12, 10); analyze.FontSize = 15; analyze.Margin = new Thickness(0); stop.Margin = new Thickness(8, 0, 0, 0); stop.Padding = new Thickness(14, 10, 14, 10);
         stop.Visibility = Visibility.Collapsed; DockPanel.SetDock(stop, Dock.Right); footerRow.Children.Add(stop); footerRow.Children.Add(analyze);
         footer.Children.Add(footerRow); status.Margin = new Thickness(20, 3, 20, 8); status.TextWrapping = TextWrapping.Wrap; footer.Children.Add(status);
-        var note = Text("模型估计供参考，不代表对方真实心理。回复请核对后自行发送。", 11); note.Foreground = Brush("#909691"); note.Margin = new Thickness(20, 0, 20, 12); note.TextWrapping = TextWrapping.Wrap; footer.Children.Add(note);
+        var note = Text("模型估计供参考，不代表对方真实心理。回复请核对后自行发送。", 11); note.Foreground = Brush("#8E8E93"); note.Margin = new Thickness(20, 0, 20, 12); note.TextWrapping = TextWrapping.Wrap; footer.Children.Add(note);
         scroll.Content = rows; root.Children.Add(scroll);
         analyze.Click += async (_, _) => await Analyze(); stop.Click += (_, _) => { stopAfterCurrent = true; following = false; timer.Stop(); follow.Content = "跟随"; status.Text = "正在完成当前请求，随后停止。"; };
         timer.Tick += async (_, _) => await Tick();
+        KeyDown += async (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.R && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0)
+            { e.Handled = true; await ReadWechat(); }
+            else if (e.Key == System.Windows.Input.Key.Enter && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0)
+            { e.Handled = true; if (!busy && !reading && !readIncomplete) await Analyze(); }
+            else if (e.Key == System.Windows.Input.Key.Escape && busy)
+            { stopAfterCurrent = true; following = false; timer.Stop(); follow.Content = "跟随"; status.Text = "正在完成当前请求，随后停止。"; e.Handled = true; }
+            else if (e.Key == System.Windows.Input.Key.P && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0)
+            { Topmost = !Topmost; e.Handled = true; }
+        };
         Closed += (_, _) => { lifetime.Cancel(); timer.Stop(); client.Dispose(); };
         Render();
     }
     internal static Brush Brush(string hex) => (Brush)new BrushConverter().ConvertFromString(hex)!;
-    internal static TextBlock Text(string text, double size = 14, bool bold = false) => new() { Text = text, FontSize = size, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, Foreground = Brush("#24322D"), VerticalAlignment = VerticalAlignment.Center };
+    internal static TextBlock Text(string text, double size = 14, bool bold = false) => new() { Text = text, FontSize = size, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, Foreground = Brush("#1D1D1F"), VerticalAlignment = VerticalAlignment.Center };
+    internal const string UiFont = "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI";
+    private static ControlTemplate? buttonTemplate;
+    private static ControlTemplate ButtonTemplate()
+    {
+        if (buttonTemplate != null) return buttonTemplate;
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+        border.SetValue(Border.SnapsToDevicePixelsProperty, true);
+        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+        border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
+        border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
+        var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
+        presenter.SetValue(FrameworkElement.MarginProperty, new TemplateBindingExtension(Control.PaddingProperty));
+        presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        border.AppendChild(presenter);
+        var template = new ControlTemplate(typeof(Button)) { VisualTree = border };
+        template.Triggers.Add(new Trigger { Property = UIElement.IsMouseOverProperty, Value = true, Setters = { new Setter(UIElement.OpacityProperty, 0.88) } });
+        template.Triggers.Add(new Trigger { Property = System.Windows.Controls.Primitives.ButtonBase.IsPressedProperty, Value = true, Setters = { new Setter(UIElement.OpacityProperty, 0.7) } });
+        template.Triggers.Add(new Trigger { Property = UIElement.IsEnabledProperty, Value = false, Setters = { new Setter(UIElement.OpacityProperty, 0.45) } });
+        return buttonTemplate = template;
+    }
     internal static Button Button(string text, RoutedEventHandler? click, bool primary = false)
     {
-        var button = new Button { Content = text, Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 6, 0),
-            Background = Brush(primary ? "#95EC69" : "#FFFFFF"), Foreground = Brush("#193225"), BorderBrush = Brush("#D8DCDA"),
-            FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal, Cursor = System.Windows.Input.Cursors.Hand };
+        var button = new Button { Content = text, Template = ButtonTemplate(), Padding = new Thickness(13, 7, 13, 7), Margin = new Thickness(0, 0, 6, 4),
+            Background = Brush(primary ? "#0A84FF" : "#FFFFFF"), Foreground = Brush(primary ? "#FFFFFF" : "#1D1D1F"), BorderBrush = Brush(primary ? "#0A84FF" : "#D1D1D6"),
+            BorderThickness = new Thickness(primary ? 0 : 1), FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal, Cursor = System.Windows.Input.Cursors.Hand };
         if (click != null) button.Click += click; return button;
     }
     private static Capture Demo()
@@ -104,12 +139,12 @@ public sealed class MainWindow : Window
         {
             var index = i; var message = capture.Messages[i]; var self = message.Sender == "self";
             var outer = new StackPanel { HorizontalAlignment = self ? HorizontalAlignment.Right : HorizontalAlignment.Left,
-                Margin = new Thickness(self ? 58 : 18, 10, self ? 18 : 58, 12), MaxWidth = 410 };
+                Margin = new Thickness(self ? 58 : 18, 6, self ? 18 : 58, 8), MaxWidth = 410 };
             var who = Button(self ? "我" : message.Sender == "other" ? "对方" : "发送方待确认", (_, _) => EditMessage(index));
-            who.FontSize = 11; who.Padding = new Thickness(3); who.Background = Brushes.Transparent; who.BorderThickness = new Thickness(0); who.HorizontalAlignment = self ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            who.FontSize = 11; who.Foreground = Brush("#8E8E93"); who.Margin = new Thickness(6, 0, 6, 1); who.Padding = new Thickness(3); who.Background = Brushes.Transparent; who.BorderThickness = new Thickness(0); who.HorizontalAlignment = self ? HorizontalAlignment.Right : HorizontalAlignment.Left;
             outer.Children.Add(who);
-            var content = Text(message.Text, 17); content.TextWrapping = TextWrapping.Wrap;
-            outer.Children.Add(new Border { Background = Brush(self ? "#95EC69" : "#FFFFFF"), CornerRadius = new CornerRadius(7), Padding = new Thickness(14, 11, 14, 11), Child = content });
+            var content = Text(message.Text, 15); content.TextWrapping = TextWrapping.Wrap; if (self) content.Foreground = Brushes.White;
+            outer.Children.Add(new Border { Background = Brush(self ? "#0A84FF" : "#E9E9EB"), CornerRadius = new CornerRadius(17), Padding = new Thickness(14, 9, 14, 10), HorizontalAlignment = self ? HorizontalAlignment.Right : HorizontalAlignment.Left, Child = content });
             string key; try { key = Key(i); } catch { key = ""; }
             if (!self)
             {
@@ -118,8 +153,8 @@ public sealed class MainWindow : Window
                 {
                     var label = busy && i == runningIndex ? "Jev · 正在分析…" : message.Sender == "unknown" ? "先点上方姓名确认发送方" : "Jev · 分析这条";
                     var rowButton = Button(label, async (_, _) => await Analyze(index)); rowButton.IsEnabled = !busy && !reading && !readIncomplete && message.Sender == "other";
-                    rowButton.BorderThickness = new Thickness(0); rowButton.Background = Brushes.Transparent; rowButton.FontSize = 12; rowButton.HorizontalAlignment = HorizontalAlignment.Left; outer.Children.Add(rowButton);
-                    if (errors.TryGetValue(key, out var error)) { var tip = Text(error, 12); tip.Foreground = Brush("#B45A28"); tip.TextWrapping = TextWrapping.Wrap; outer.Children.Add(tip); }
+                    rowButton.Foreground = Brush("#0A84FF"); rowButton.FontSize = 12; rowButton.Padding = new Thickness(10, 4, 10, 4); rowButton.Margin = new Thickness(0, 6, 0, 0); rowButton.HorizontalAlignment = HorizontalAlignment.Left; outer.Children.Add(rowButton);
+                    if (errors.TryGetValue(key, out var error)) { var tip = Text(error, 12); tip.Foreground = Brush("#B25E00"); tip.Margin = new Thickness(2, 4, 0, 0); tip.TextWrapping = TextWrapping.Wrap; outer.Children.Add(tip); }
                 }
             }
             rows.Children.Add(outer);
@@ -131,19 +166,50 @@ public sealed class MainWindow : Window
     }
     private Border Card(Judgment result, bool latest)
     {
-        var panel = new StackPanel(); panel.Children.Add(Text("Jev:", 13, true));
-        void Line(string text, bool bold = false) { var t = Text(text, 13, bold); t.TextWrapping = TextWrapping.Wrap; panel.Children.Add(t); }
-        Line("当前可能诉求", true);
-        foreach (var item in result.Needs.OrderByDescending(n => n.Value).Take(3)) Line($"- {item.Label}：{item.Value:P0}");
-        Line(""); Line("是否需要核对先前记录？", true); Line($"- 是：{result.History:P0}    否：{1 - result.History:P0}");
-        Line(""); Line("建议动作", true);
-        foreach (var item in result.Actions.OrderByDescending(n => n.Value).Take(3)) Line($"- {item.Label}：{item.Value:P0}");
-        Line($"\n紧张程度：{result.Tension:0.#} / 10"); Line($"分歧缓解的线索：{result.Settled:P0}");
-        var provider = Text(result.Provider + " · 模型估计", 10); provider.TextWrapping = TextWrapping.Wrap; provider.Foreground = Brush("#7F8881"); provider.Margin = new Thickness(0, 8, 0, 0); panel.Children.Add(provider);
-        if (latest)
-            foreach (var draft in result.Drafts) { Line("\n" + draft); panel.Children.Add(Button("复制回复", (_, _) => { try { Clipboard.SetText(draft); status.Text = "已复制，请核对后到微信自行发送。"; } catch { status.Text = "剪贴板正忙，请稍后再复制。"; } })); }
-        if (!string.IsNullOrEmpty(result.Notice)) Line(result.Notice);
-        return new Border { Background = Brush("#E2E2E2"), CornerRadius = new CornerRadius(3), Padding = new Thickness(10), Margin = new Thickness(0, 7, 0, 0), Child = panel };
+        var panel = new StackPanel();
+        var cardHead = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+        var badge = Text("截至本条消息", 10); badge.Foreground = Brush("#8E8E93"); DockPanel.SetDock(badge, Dock.Right); cardHead.Children.Add(badge);
+        var title = Text("✦ Jev 深度分析", 13, true); title.Foreground = Brush("#0A84FF"); cardHead.Children.Add(title);
+        panel.Children.Add(cardHead);
+        void Section(string text) { var t = Text(text, 11, true); t.Foreground = Brush("#8E8E93"); t.Margin = new Thickness(0, 10, 0, 2); t.TextWrapping = TextWrapping.Wrap; panel.Children.Add(t); }
+        void Meter(string label, double value, string? display = null, string? barColor = null)
+        {
+            value = double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+            var line = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+            var figure = Text(display ?? value.ToString("P0"), 12, true); figure.Foreground = Brush(barColor ?? "#555558"); figure.Margin = new Thickness(10, 0, 0, 0); DockPanel.SetDock(figure, Dock.Right); line.Children.Add(figure);
+            var name = Text(label, 12); name.TextWrapping = TextWrapping.Wrap; line.Children.Add(name); panel.Children.Add(line);
+            var track = new Grid { Height = 3.5, Margin = new Thickness(0, 3, 0, 2) };
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(value, GridUnitType.Star) });
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1 - value, GridUnitType.Star) });
+            var back = new Border { Background = Brush("#EFEFF2"), CornerRadius = new CornerRadius(1.75) }; Grid.SetColumnSpan(back, 2); track.Children.Add(back);
+            track.Children.Add(new Border { Background = Brush(barColor ?? "#0A84FF"), CornerRadius = new CornerRadius(1.75) }); panel.Children.Add(track);
+        }
+        Section("当前可能诉求"); foreach (var item in result.Needs.OrderByDescending(n => n.Value).Take(3)) Meter(item.Label, item.Value);
+        Section("是否需要核对先前记录？"); Meter("是", result.History); Meter("否", 1 - result.History);
+        Section("建议动作"); foreach (var item in result.Actions.OrderByDescending(n => n.Value).Take(3)) Meter(item.Label, item.Value);
+        Section("紧张程度与分歧");
+        var tColor = result.Tension < 3.0 ? "#34C759" : result.Tension < 6.5 ? "#FF9500" : "#FF3B30";
+        var tDesc = result.Tension < 3.0 ? "平和" : result.Tension < 6.5 ? "轻度分歧" : "较紧张";
+        Meter("对话紧张程度", result.Tension / 10, $"{tDesc} ({result.Tension:0.#} / 10)", tColor);
+        Meter("分歧缓解的线索", result.Settled);
+        if (latest && result.Drafts.Length > 0)
+        {
+            Section("回复建议（未发送）");
+            for (var d = 0; d < result.Drafts.Length; d++)
+            {
+                var draft = result.Drafts[d];
+                var dIndex = d + 1;
+                var text = Text(draft, 13); text.TextWrapping = TextWrapping.Wrap;
+                var copy = Button("复制建议", (_, _) => { try { Clipboard.SetText(draft); status.Text = $"建议 {dIndex} 已复制，请核对后到微信自行发送。"; } catch { status.Text = "剪贴板正忙，请稍后再复制。"; } });
+                copy.Margin = new Thickness(0, 8, 0, 0); copy.FontSize = 11; copy.Padding = new Thickness(10, 4, 10, 4); copy.HorizontalAlignment = HorizontalAlignment.Left;
+                var badgeText = Text($"建议 {dIndex}", 10, true); badgeText.Foreground = Brush("#0A84FF"); badgeText.Margin = new Thickness(0, 0, 0, 4);
+                var stack = new StackPanel(); stack.Children.Add(badgeText); stack.Children.Add(text); stack.Children.Add(copy);
+                panel.Children.Add(new Border { Background = Brush("#F8F8FA"), BorderBrush = Brush("#E5E5EA"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 10, 12, 8), Margin = new Thickness(0, 6, 0, 0), Child = stack });
+            }
+        }
+        if (!string.IsNullOrEmpty(result.Notice)) { var notice = Text(result.Notice, 12); notice.TextWrapping = TextWrapping.Wrap; notice.Foreground = Brush("#6E6E73"); notice.Margin = new Thickness(0, 10, 0, 0); panel.Children.Add(notice); }
+        var provider = Text(result.Provider + " · 模型估计", 10); provider.TextWrapping = TextWrapping.Wrap; provider.Foreground = Brush("#8E8E93"); provider.Margin = new Thickness(0, 10, 0, 0); panel.Children.Add(provider);
+        return new Border { Background = Brush("#FFFFFF"), BorderBrush = Brush("#E5E5EA"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = new Thickness(14, 12, 14, 10), Margin = new Thickness(0, 8, 0, 0), Child = panel };
     }
     private bool Confirm()
     {
@@ -296,7 +362,7 @@ public sealed class MainWindow : Window
         var input = new TextBox { Text = message.Text, AcceptsReturn = true, Height = 180, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; panel.Children.Add(input);
         panel.Children.Add(Button("保存修正", (_, _) => { if (string.IsNullOrWhiteSpace(input.Text) || input.Text.Length > 6000) return; var updated = capture.Messages.ToList(); updated[index] = message with { Sender = new[] { "other", "self", "unknown" }[role.SelectedIndex], Text = input.Text }; Load(capture with { Messages = updated, Source = "manual", Detail = "已手动修正，自动跟随已停止。" }); dialog.Close(); }, true)); dialog.ShowDialog();
     }
-    private Window Dialog(string title, double width, double height) => new() { Title = title, Width = width, Height = Math.Min(height, SystemParameters.WorkArea.Height - 30), Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, FontFamily = FontFamily, FontSize = 14, Background = Brush("#F5F7F5"), ResizeMode = ResizeMode.CanResize };
+    private Window Dialog(string title, double width, double height) => new() { Title = title, Width = width, Height = Math.Min(height, SystemParameters.WorkArea.Height - 30), Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, FontFamily = FontFamily, FontSize = 14, Background = Brush("#F5F5F7"), ResizeMode = ResizeMode.CanResize };
     private void SettingsDialog()
     {
         var dialog = Dialog("模型与连接", 590, 680); var panel = new StackPanel { Margin = new Thickness(22) }; dialog.Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };

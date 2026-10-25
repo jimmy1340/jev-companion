@@ -42,14 +42,14 @@ internal static class Installer
     public static Window Window()
     {
         var window = new Window { Title = "安装 Jev 伴聊", Width = 550, Height = Math.Min(550, SystemParameters.WorkArea.Height - 30), ResizeMode = ResizeMode.CanResize,
-            WindowStartupLocation = WindowStartupLocation.CenterScreen, Background = MainWindow.Brush("#F3F6F2"), FontFamily = new System.Windows.Media.FontFamily("Microsoft YaHei UI") };
+            WindowStartupLocation = WindowStartupLocation.CenterScreen, Background = MainWindow.Brush("#F5F5F7"), FontFamily = new System.Windows.Media.FontFamily(MainWindow.UiFont) };
         var panel = new StackPanel { Margin = new Thickness(30) }; window.Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         panel.Children.Add(MainWindow.Text("Jev 伴聊", 29, true));
         var description = MainWindow.Text("Windows 预览版 0.4.1 · x64\n聊天气泡下方的分析与回复助手。", 15); description.Margin = new Thickness(0, 12, 0, 18); panel.Children.Add(description);
         var details = MainWindow.Text("内含运行环境，无需安装 Python、Codex 或 .NET。\n\n新增：控件读取失败时转为微信窗口识别。首次框选消息区后，同尺寸窗口可直接重读；此路径仍需真机验证。\n\n更新保留已有连接配置；安装包不包含账号或密钥。", 13); details.TextWrapping = TextWrapping.Wrap; panel.Children.Add(details);
         var path = MainWindow.Text("安装位置：" + InstallDirectory, 11); path.Margin = new Thickness(0, 16, 0, 14); path.TextWrapping = TextWrapping.Wrap; panel.Children.Add(path);
         var state = MainWindow.Text("仅安装到当前用户，不修改微信。", 12); state.TextWrapping = TextWrapping.Wrap;
-        var button = MainWindow.Button("安装并打开", null, true); panel.Children.Add(button); panel.Children.Add(state);
+        var button = MainWindow.Button("安装并打开", null, true); button.HorizontalAlignment = HorizontalAlignment.Left; button.Padding = new Thickness(20, 9, 20, 9); button.Margin = new Thickness(0, 0, 0, 10); panel.Children.Add(button); panel.Children.Add(state);
         button.Click += (_, _) =>
         {
             button.IsEnabled = false;
