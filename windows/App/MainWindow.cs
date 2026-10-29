@@ -36,8 +36,10 @@ public sealed class MainWindow : Window
 
     public MainWindow()
     {
+        var startupFailed = false;
         try { settings = Settings.Load(); _ = settings.Connection(); }
-        catch { settings = new(); status.Text = "原连接配置无法解密，请在设置中重新填写。"; }
+        catch { settings = new(); startupFailed = true; status.Text = "原连接配置无法解密。请在「连接设置」重新填写这台电脑的密钥；不会自动改用其他账号。"; }
+        if (!startupFailed) status.Text = Contract.StartupHint(Settings.Stored, settings.UseJev, !string.IsNullOrWhiteSpace(settings.JevProtected), !string.IsNullOrWhiteSpace(settings.Model));
         Title = "Jev 伴聊 0.4.1"; Width = 560; Height = Math.Min(850, SystemParameters.WorkArea.Height - 40); MinWidth = 430; MinHeight = Math.Min(620, SystemParameters.WorkArea.Height - 40);
         FontFamily = new FontFamily(UiFont); FontSize = 14; Background = Brush("#F5F5F7"); UseLayoutRounding = true;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -250,7 +252,7 @@ public sealed class MainWindow : Window
                 {
                     if (version != generation) break;
                     errors[key] = Friendly(e); failed++;
-                    if (errors[key].Contains("HTTP") || errors[key].Contains("连接")) stopAfterCurrent = true;
+                    if (errors[key].Contains("HTTP") || errors[key].Contains("连接") || errors[key].Contains("密钥") || errors[key].Contains("凭证")) stopAfterCurrent = true;
                 }
                 done++; Render();
             }
@@ -259,8 +261,8 @@ public sealed class MainWindow : Window
         catch (Exception e) { status.Text = Friendly(e); }
         finally { busy = false; runningIndex = -1; Render(); }
     }
-    private static string Friendly(Exception e) => e is JsonException || e is KeyNotFoundException || e is InvalidOperationException && e.Message.Contains("Json")
-        ? "模型返回格式不符合要求，请重试或更换模型。" : e is System.Net.Http.HttpRequestException ? "无法连接模型服务，请检查连接设置及服务是否运行。" : e is TaskCanceledException ? "模型请求超时，请稍后重试。" : e.Message;
+    private string Friendly(Exception e) => e is JsonException || e is KeyNotFoundException || e is InvalidOperationException && e.Message.Contains("Json")
+        ? "模型返回格式不符合要求，请重试或更换模型。" : e is System.Net.Http.HttpRequestException ? Contract.ConnectionFailureHint(settings.Url) : e is TaskCanceledException ? "模型请求超时，请稍后重试。" : e.Message;
     private async Task ReadWechat(bool automatic = false)
     {
         if (reading || busy) return;
@@ -366,18 +368,22 @@ public sealed class MainWindow : Window
     private void SettingsDialog()
     {
         var dialog = Dialog("模型与连接", 590, 680); var panel = new StackPanel { Margin = new Thickness(22) }; dialog.Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        var explanation = Text("此客户端不会自动使用开发电脑的账号。密钥由本机 Windows 用户加密保存，安装包不包含任何账号。", 12); explanation.TextWrapping = TextWrapping.Wrap; panel.Children.Add(explanation);
+        var explanation = Text("此客户端不会自动使用开发电脑或其他工具的账号。密钥由本机 Windows 用户加密保存，安装包不包含任何账号。", 12); explanation.TextWrapping = TextWrapping.Wrap; panel.Children.Add(explanation);
         void Label(string label) { var t = Text(label, 13, true); t.Margin = new Thickness(0, 15, 0, 5); panel.Children.Add(t); }
+        void Hint(string label) { var t = Text(label, 11); t.TextWrapping = TextWrapping.Wrap; t.Foreground = Brush("#6E6E73"); t.Margin = new Thickness(0, 4, 0, 0); panel.Children.Add(t); }
         Label("分析模式"); var mode = new ComboBox { ItemsSource = new[] { "9Router：分析与回复", "TypeSafe Jev 判断 + 可选 9Router 回复" }, SelectedIndex = settings.UseJev ? 1 : 0 }; panel.Children.Add(mode);
+        Hint("9Router 模式必须选择模型。Jev 模式必须填写这台电脑的 TypeSafe 密钥；回复模型可留空。");
         Label("9Router / 兼容服务地址"); var url = new TextBox { Text = settings.Url }; panel.Children.Add(url);
-        var hint = Text("127.0.0.1 指这台 Windows；共用其他电脑需受认证的 HTTPS 地址。", 11); hint.TextWrapping = TextWrapping.Wrap; panel.Children.Add(hint);
+        Hint("127.0.0.1 指这台 Windows。地址以 /v1 结尾。其他电脑需要带身份验证的 HTTPS，不能填这台电脑的回环地址。");
         Label("9Router 密钥"); var routerKey = new PasswordBox { Password = Settings.Unprotect(settings.RouterProtected) }; panel.Children.Add(routerKey);
+        Hint("不需要认证时留空。401 表示密钥被拒绝。不要带引号，也不要把密钥写进地址。");
         Label("回复模型（可刷新列表或手动填写）"); var model = new ComboBox { IsEditable = true, Text = settings.Model }; panel.Children.Add(model);
-        var test = Text("连接检测只读取模型列表，不发送聊天。", 12); test.TextWrapping = TextWrapping.Wrap;
+        var test = Text("连接检测只读取模型列表，不发送聊天。列表为空不代表密钥一定无效。", 12); test.TextWrapping = TextWrapping.Wrap;
         var refresh = Button("刷新模型列表", null); refresh.Margin = new Thickness(0, 8, 0, 4); panel.Children.Add(refresh); panel.Children.Add(test);
         refresh.Click += async (_, _) => { refresh.IsEnabled = false; try { var models = await client.Models(new Connection(url.Text, "", routerKey.Password, false, ""), lifetime.Token); model.ItemsSource = models; if (string.IsNullOrWhiteSpace(model.Text) && models.Length > 0) model.SelectedIndex = 0; test.Text = $"连接成功，找到 {models.Length} 个模型；实际可用性以分析请求为准。"; } catch (Exception e) { test.Text = Friendly(e); } finally { refresh.IsEnabled = true; } };
         Label("TypeSafe / Jev 密钥（仅 Jev 模式需要）"); var jevKey = new PasswordBox { Password = Settings.Unprotect(settings.JevProtected) }; panel.Children.Add(jevKey);
-        var save = Button("保存连接", (_, _) => { try { if (mode.SelectedIndex == 0 || !string.IsNullOrWhiteSpace(model.Text)) _ = Contract.Endpoint(url.Text, "models"); settings = new Settings { Url = url.Text.Trim(), Model = model.Text.Trim(), UseJev = mode.SelectedIndex == 1, RouterProtected = Settings.Protect(routerKey.Password.Trim()), JevProtected = Settings.Protect(jevKey.Password.Trim()), WindowRegion = settings.WindowRegion }; settings.Save(); generation++; stopAfterCurrent = busy; consent = null; following = false; timer.Stop(); follow.Content = "跟随"; cards.Clear(); errors.Clear(); Render(); status.Text = "连接配置已保存；点击逐条分析进行实际调用。"; dialog.Close(); } catch (Exception e) { test.Text = Friendly(e); } }, true);
+        Hint("只在 Jev 模式必填。保存前会检查是否为一行密钥；空密钥不会改用其他账号。");
+        var save = Button("保存连接", (_, _) => { try { Contract.ValidateConnectionDraft(mode.SelectedIndex == 1, url.Text, model.Text, routerKey.Password, jevKey.Password); settings = new Settings { Url = url.Text.Trim(), Model = model.Text.Trim(), UseJev = mode.SelectedIndex == 1, RouterProtected = Settings.Protect(routerKey.Password.Trim()), JevProtected = Settings.Protect(jevKey.Password.Trim()), WindowRegion = settings.WindowRegion }; settings.Save(); generation++; stopAfterCurrent = busy; consent = null; following = false; timer.Stop(); follow.Content = "跟随"; cards.Clear(); errors.Clear(); Render(); status.Text = "连接配置已保存在本机，并已清除旧分析。点击逐条分析才会实际调用模型。"; dialog.Close(); } catch (Exception e) { test.Text = Friendly(e); } }, true);
         save.Margin = new Thickness(0, 22, 0, 0); panel.Children.Add(save);
         var diagnostics = new WrapPanel { Margin = new Thickness(0, 14, 0, 0) }; panel.Children.Add(diagnostics);
         diagnostics.Children.Add(Button("重选微信消息区域", async (_, _) => { dialog.Close(); await ReadWindow(true); }));

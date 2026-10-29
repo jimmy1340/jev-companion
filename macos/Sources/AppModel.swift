@@ -94,7 +94,7 @@ final class AppModel: ObservableObject {
         didSet { if showForget { forgetTarget = effectiveID } }
     }
     @Published var showSettings = false
-    @Published var modelStatus = "尚未读取模型列表"
+    @Published var modelStatus = "尚未读取模型列表。不需要回复草稿时可关闭 9Router。"
     @Published var copiedID: String?
     @Published var permissionReady = false
     let routerCredentialService = "jev-companion-router"
@@ -195,8 +195,8 @@ final class AppModel: ObservableObject {
             guard token == generation, mode == .demo, let request = result["request"] as? [String: Any] else { return }
             demoRequest = request
             let loaded = decodeMessages(request["messages"])
-            acceptCapture(title: request["conversation_title"] as? String ?? "虚构示例", id: request["conversation_id"] as? String ?? "demo:dinner-v1", messages: loaded, warnings: ["这是一段虚构对话。分析时会真实调用 Jev 与选定的回复模型。"], frame: nil)
-            status = "示例已就绪 · 点击分析体验真实结果"
+            acceptCapture(title: request["conversation_title"] as? String ?? "虚构示例", id: request["conversation_id"] as? String ?? "demo:dinner-v1", messages: loaded, warnings: ["这是一段虚构对话。点击分析才会调用 Jev；需要你自己的 TypeSafe 凭证，应用不读取其他工具的账号。"], frame: nil)
+            status = "示例已就绪 · 点击分析才会调用模型，需自备凭证"
         } catch { if token == generation, mode == .demo { self.error = error.localizedDescription } }
     }
 
@@ -446,7 +446,7 @@ final class AppModel: ObservableObject {
                 analysisErrorsByMessageID[anchorID] = error.localizedDescription
                 failedCards += 1
                 // A shared provider failure should not fan out into another request for every row.
-                if ["凭证", "调用器", "限流", "繁忙", "配置"].contains(where: { error.localizedDescription.contains($0) }) {
+                if ["凭证", "密钥", "调用器", "限流", "繁忙", "配置"].contains(where: { error.localizedDescription.contains($0) }) {
                     stopAfterCurrentAnalysis = true
                 }
             }

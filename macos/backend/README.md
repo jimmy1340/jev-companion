@@ -45,7 +45,7 @@
 
 `forget`：`{"conversation_id":"…","confirmed":true}`。只删除本工具保存的这个会话；不接触微信数据库。
 
-`status` / `stats` 不需要 stdin、不调用云服务；返回 `backend_ready`、`helper_available`、`credential_status="not_checked"`、`storage` 路径和历史数量。调用器存在不等于凭证有效。默认客户端的 TYPESAFE_API_KEY 与专用钥匙串配置见上级 README。
+`status` / `stats` 不需要 stdin、不调用云服务，也不打开钥匙串。返回 `backend_ready`、`helper_available`、`credential_status="not_checked"`、`storage` 路径和历史数量。调用器存在不等于凭证有效。另外返回 `credential_setup` 与 `credential_hint`，只描述 `TYPESAFE_API_KEY` 是否未设置、为空、格式不对或格式可接受；不返回密钥，也不据此判断 TypeSafe 是否接受该密钥。自定义 `JEV_TYPESAFE_HELPER` 的凭证规则不由这项检查代表。默认客户端的环境变量与专用钥匙串配置见上级 README。
 
 `demo` 不需要 stdin、不调用云服务，返回 `request` 和 `history`。对返回的 `request` 执行 `analyze`，才会发送一次真实 Jev 请求。
 
@@ -84,7 +84,7 @@
 - `evidence[].retrieval`: `lexical_match` 表示关键词候选，`recent_context` 表示仅按近期顺序补充的背景，二者都不代表已验证相关。
 - `usage` 只返回服务实际报告的 token 数；不预估账单。
 
-错误格式：`{"ok":false,"error":{"code":"cloud_consent_required","message":"…"}}`。不要在后台自动重试 API 失败；用户可以手动重试。
+错误格式：`{"ok":false,"error":{"code":"cloud_consent_required","message":"…"}}`。凭证问题会区分代码：`credential_unavailable`（未配置或环境变量为空）、`credential_invalid`（含空格、换行或两侧引号）、`credential_rejected`（HTTP 401）。回复模型则区分未附带密钥与密钥被拒绝。错误文本不包含密钥或服务原始正文。不要在后台自动重试 API 失败；用户可以手动重试。
 
 ## 历史边界
 

@@ -160,6 +160,69 @@ class RouterTests(unittest.TestCase):
             with self.assertRaises(engine.EngineError) as caught:
                 engine.router_credential({"api_key_env": "JEV_TEST_KEY"})
         self.assertEqual(caught.exception.code, "router_auth_unavailable")
+        self.assertIn("JEV_TEST_KEY", caught.exception.message)
+        self.assertIn("不会读取其他工具", caught.exception.message)
+
+    def test_router_secret_shape_is_not_echoed(self):
+        with mock.patch.dict(engine.os.environ, {"JEV_TEST_KEY": "  SECRET_FIXTURE  "}):
+            self.assertEqual(engine.router_credential({"api_key_env": "JEV_TEST_KEY"}), "SECRET_FIXTURE")
+        with mock.patch.dict(engine.os.environ, {"JEV_TEST_KEY": '"SECRET_FIXTURE"'}):
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.router_credential({"api_key_env": "JEV_TEST_KEY"})
+        self.assertNotIn("SECRET_FIXTURE", str(caught.exception))
+        self.assertIn("引号", caught.exception.message)
+        missing = engine.subprocess.CompletedProcess([], 1, "", "SECRET diagnostic")
+        with mock.patch.object(engine.subprocess, "run", return_value=missing):
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.router_credential({"keychain_service": "jev-companion-router", "keychain_account": "me"})
+        self.assertIn("jev-companion-router", caught.exception.message)
+        self.assertNotIn("SECRET", str(caught.exception))
+        malformed = engine.subprocess.CompletedProcess([], 0, "SECRET WITH SPACE\n", "")
+        with mock.patch.object(engine.subprocess, "run", return_value=malformed):
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.router_credential({"keychain_service": "jev-companion-router"})
+        self.assertNotIn("SECRET", str(caught.exception))
+
+    def test_router_auth_hint_depends_on_whether_a_key_was_sent(self):
+        with FixtureServer({"error": "SECRET"}, 401) as server:
+            config = engine.router_config({"base_url": server.base_url, "model": "mock"})
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.router_http(config, "models")
+        self.assertIn("没有附带", caught.exception.message)
+        self.assertNotIn("SECRET", str(caught.exception))
+        with mock.patch.dict(engine.os.environ, {"JEV_TEST_KEY": "SECRET_FIXTURE"}), FixtureServer({"error": "SECRET_FIXTURE"}, 403) as server:
+            config = engine.router_config({"base_url": server.base_url, "model": "mock", "api_key_env": "JEV_TEST_KEY"})
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.router_http(config, "models")
+        self.assertEqual(caught.exception.code, "router_auth_required")
+        self.assertIn("拒绝", caught.exception.message)
+        self.assertIn("403", caught.exception.message)
+        self.assertNotIn("SECRET_FIXTURE", str(caught.exception))
+
+    def test_router_404_names_the_base_url_not_the_body(self):
+        with FixtureServer({"error": "SECRET"}, 404) as server:
+            config = engine.router_config({"base_url": server.base_url, "model": "mock"})
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.router_http(config, "models")
+        self.assertEqual(caught.exception.code, "router_http_error")
+        self.assertIn(server.base_url, caught.exception.message)
+        self.assertNotIn("SECRET", str(caught.exception))
+
+    def test_empty_model_list_is_explicit(self):
+        with FixtureServer({"data": []}) as server:
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.dispatch("models", {"draft_provider": {"base_url": server.base_url}})
+        self.assertEqual(caught.exception.code, "router_models_empty")
+        self.assertIn("不代表密钥", caught.exception.message)
+
+    def test_router_unavailable_names_loopback_without_secrets(self):
+        with mock.patch.object(engine.http.client.HTTPConnection, "connect", side_effect=OSError("SECRET")):
+            with self.assertRaises(engine.EngineError) as caught:
+                engine.router_http(engine.router_config({"base_url": "http://127.0.0.1:9/v1", "model": "mock"}), "models")
+        self.assertEqual(caught.exception.code, "router_unavailable")
+        self.assertIn("127.0.0.1:9", caught.exception.message)
+        self.assertIn("没有发送聊天", caught.exception.message)
+        self.assertNotIn("SECRET", str(caught.exception))
 
     def test_timeout_is_sanitized(self):
         with mock.patch.object(engine.http.client.HTTPConnection, "connect", side_effect=socket.timeout("SECRET")):
