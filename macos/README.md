@@ -13,6 +13,19 @@ bash macos/build.sh
 
 默认构建缓存放在 `macos/.build/`，应用放在 `dist/Jev伴聊.app`。可用 `JEV_BUILD_DIR` 和 `JEV_OUTPUT_DIR` 指定构建位置。应用是本机临时签名，未做 Apple 公证。
 
+干净的 Mac 上先执行 `xcode-select --install`。`bash macos/build.sh` 使用 `xcrun` 和 `/usr/bin/python3`；Python 低于 3.9 会在编译前退出。Homebrew 或 pyenv 里的解释器不会被应用调用。构建不需要微信、Codex 或已经写好的密钥。
+
+## 第一次分析失败时
+
+示例和粘贴在点击分析之前不会调用模型。失败原因会分开说明，界面不显示密钥本身：
+
+- **尚未配置**：终端启动前设置 `TYPESAFE_API_KEY`。从 Finder 打开时，终端变量不会带过去，请改用下面的钥匙串条目。
+- **变量已设置但为空**：不会改去读钥匙串。填入密钥，或取消该变量后再用钥匙串。
+- **格式不正确**：密钥须是一行可打印字符，不要带空格、换行或两侧引号。
+- **HTTP 401**：密钥已送出但被拒绝。请在 TypeSafe 核对这把密钥。应用不会改用其他工具保存的账号，也不会自动重试。
+
+钥匙串账号必须是 `id -un` 的短用户名，不是「系统设置」里的显示名。服务名保持 `jev-companion-typesafe`，除非你同时设置了 `JEV_TYPESAFE_KEYCHAIN_SERVICE`。回复模型是可选项；不需要草稿时关闭「通过 9Router 生成回复」。`http://127.0.0.1:20128/v1` 指这台 Mac。
+
 ## TypeSafe 凭证
 
 默认使用随项目提供的 `backend/typesafe_client.py`，直接访问 TypeSafe 官方 HTTPS API，不需要安装 Codex 或私人脚本。两种配置方式任选一种。

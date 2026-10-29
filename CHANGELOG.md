@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- First-run credential guidance now distinguishes a missing credential, an empty variable, a malformed key, and a rejected key. Keys are still not bundled, echoed, or taken from another tool's account.
+- Install docs name `/usr/bin/python3` from the Apple Command Line Tools, the .NET SDK 10 requirement, and which tests run without WeChat.
+- `macos/build.sh` stops early when `/usr/bin/python3` is older than 3.9.
+
 ## 0.2.1
 
 - **Refined Apple-Style Visual Hierarchy**:

@@ -22,7 +22,7 @@ Mac 原型有真实微信文字读取和虚构对话模型调用的历史验收�
 
 ## 构建
 
-Mac 需要 macOS 13 以上、Apple Command Line Tools 和 Python 3.9 以上：
+在仓库根目录执行。Mac 需要 macOS 13 以上、Apple Command Line Tools，以及其中的 `/usr/bin/python3`（3.9 以上）。应用不使用 Homebrew 或 pyenv 里的 Python。Windows 构建需要 .NET SDK 10；发布出的程序自带运行环境。没有微信、密钥或在线推理时，Linux 可运行 Python 后端测试；装有 .NET SDK 10 时也可运行 Windows 核心测试。Swift 与 `macos/build.sh` 需要 Mac。
 
 ```sh
 bash macos/test.sh

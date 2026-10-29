@@ -47,6 +47,17 @@ Copy-Item dist/windows/JevCompanion.exe dist/windows/JevCompanion-Setup-0.4.1-wi
 
 Provide your own TypeSafe and/or compatible model credentials in Connection Settings. Windows protects saved credentials with DPAPI. See [Windows usage and limitations](windows/README.md).
 
+### Clean machine
+
+These commands assume a fresh checkout and do not install WeChat, Codex, or a model account.
+
+- macOS: install Apple Command Line Tools (`xcode-select --install`) so `xcrun --find swiftc` and `/usr/bin/python3` work. The app and `macos/build.sh` call `/usr/bin/python3` specifically; Homebrew or pyenv is not used. Python must be 3.9 or newer. `bash macos/build.sh` refuses an older interpreter before compiling.
+- Windows build host: install the .NET SDK 10 (`dotnet --list-sdks` shows a `10.0` line). The published `win-x64` app includes its runtime, so the target PC does not need the SDK or Python.
+- Run from the repository root. Build products stay in `dist/` and `macos/.build/`, which are gitignored.
+- Linux can run `python3 -m unittest discover -s macos/backend/tests -v`. With the .NET SDK 10 it can also run `dotnet run --project windows/Tests/Jev.Tests.csproj -c Release`. Swift fixtures and `macos/build.sh` need macOS. The WPF window itself needs Windows.
+
+No command above reads WeChat or calls a live model. First launch still needs a key you create: macOS uses `TYPESAFE_API_KEY` or Keychain item `jev-companion-typesafe`; Windows asks in Connection Settings. The apps do not copy another tool's account.
+
 ## Architecture
 
 ```text
