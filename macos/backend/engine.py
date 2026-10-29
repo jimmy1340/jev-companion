@@ -7,6 +7,7 @@ The bundled TypeSafe transport owns credentials; the engine only sees judgments.
 import argparse
 import hashlib
 import http.client
+import importlib.util
 import json
 import math
 import os
@@ -326,6 +327,60 @@ def build_payload(request, evidence):
     }, "questions": questions}
 
 
+def load_typesafe_client():
+    module = sys.modules.get("jev_typesafe_client")
+    if module is not None:
+        return module
+    spec = importlib.util.spec_from_file_location("jev_typesafe_client", BUNDLED_HELPER)
+    if spec is None or spec.loader is None:
+        fail("helper_missing", "未找到 TypeSafe 调用器，请检查构建内容或 JEV_TYPESAFE_HELPER。")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sys.modules["jev_typesafe_client"] = module
+    return module
+
+
+def credential_setup_fields(helper):
+    """Local env shape for the bundled client. Does not read Keychain or call TypeSafe."""
+    report = load_typesafe_client().setup_report()
+    hint = report["credential_hint"]
+    try:
+        custom = Path(helper).expanduser().resolve() != BUNDLED_HELPER.resolve()
+    except OSError:
+        custom = True
+    if custom:
+        hint += " 当前使用了自定义调用器，上述说明只针对默认客户端的 TYPESAFE_API_KEY。"
+    return report["credential_setup"], hint
+
+
+def classify_helper_failure(stderr):
+    """Map sanitized helper stderr to a user message. Never copy stderr into the result."""
+    text = stderr if isinstance(stderr, str) else ""
+    if "TypeSafe credential format rejected" in text:
+        return "credential_invalid", (
+            "TypeSafe 凭证格式不正确。请使用一行可打印字符，去掉空格、换行和两侧引号。"
+            "密钥不会写入仓库或聊天请求。"
+        )
+    if "TYPESAFE_API_KEY is empty" in text:
+        return "credential_unavailable", (
+            "TYPESAFE_API_KEY 已设置但为空，因此没有改读钥匙串。"
+            "请填入这台电脑的 TypeSafe 凭证，或取消该变量后使用钥匙串 jev-companion-typesafe。"
+        )
+    if "HTTP 401" in text:
+        return "credential_rejected", (
+            "TypeSafe 拒绝了当前凭证（HTTP 401）。请核对 TYPESAFE_API_KEY 或钥匙串 "
+            "jev-companion-typesafe。本应用不会改用其他工具的账号，也不会自动重试。"
+        )
+    if "No TypeSafe credential" in text:
+        return "credential_unavailable", (
+            "尚未配置 TypeSafe 凭证。终端可设置 TYPESAFE_API_KEY；Finder 启动请在钥匙串新建通用密码，"
+            "服务名 jev-companion-typesafe，账号为 id -un 的短用户名。点击分析前不会调用模型。"
+        )
+    if "HTTP 429" in text or "HTTP 529" in text:
+        return "provider_busy", "Jev 当前限流或繁忙，请稍后手动重试。"
+    return "provider_error", "Jev 请求未成功；未生成推测结果。请检查网络和本机 TypeSafe 配置。"
+
+
 def helper_call(payload, helper=DEFAULT_HELPER):
     path = Path(helper).expanduser()
     if not path.is_file():
@@ -342,11 +397,8 @@ def helper_call(payload, helper=DEFAULT_HELPER):
         fail("helper_unavailable", "无法启动本机 TypeSafe 调用器，请检查运行权限。")
     if result.returncode:
         # Never propagate provider stderr: it may contain private request or credentials.
-        if "HTTP 429" in result.stderr or "HTTP 529" in result.stderr:
-            fail("provider_busy", "Jev 当前限流或繁忙，请稍后手动重试。")
-        if "HTTP 401" in result.stderr or "No TypeSafe credential" in result.stderr:
-            fail("credential_unavailable", "TypeSafe 凭证不可用，请配置 TYPESAFE_API_KEY 或 Jev 专用钥匙串条目。")
-        fail("provider_error", "Jev 请求未成功；未生成推测结果。请检查网络和本机 TypeSafe 配置。")
+        code, message = classify_helper_failure(result.stderr)
+        fail(code, message)
     if len(result.stdout) > MAX_INPUT_BYTES:
         fail("provider_invalid", "Jev 返回内容超过限制。")
     try:
@@ -470,13 +522,24 @@ def router_config(value, require_model=True):
     return normalized
 
 
+def normalize_router_secret(raw):
+    client = load_typesafe_client()
+    try:
+        return client.normalize_secret(raw)
+    except client.ClientError:
+        fail("router_auth_unavailable", "回复模型凭证格式不正确。请使用一行可打印字符，不要包含空格、换行或两侧引号。")
+
+
 def router_credential(config):
-    key = None
     if config.get("api_key_env"):
-        key = os.environ.get(config["api_key_env"])
+        name = config["api_key_env"]
+        if name not in os.environ:
+            fail("router_auth_unavailable", "回复模型凭证环境变量 %s 未设置。不需要认证时不要配置 api_key_env；本应用不会读取其他工具的密钥。" % name)
+        key = normalize_router_secret(os.environ.get(name))
         if not key:
-            fail("router_auth_unavailable", "回复模型凭证环境变量未设置。")
-    elif config.get("keychain_service"):
+            fail("router_auth_unavailable", "回复模型凭证环境变量 %s 为空。不需要认证时不要配置 api_key_env；本应用不会读取其他工具的密钥。" % name)
+        return key
+    if config.get("keychain_service"):
         args = ["/usr/bin/security", "find-generic-password", "-s", config["keychain_service"]]
         if config.get("keychain_account"):
             args.extend(["-a", config["keychain_account"]])
@@ -485,12 +548,11 @@ def router_credential(config):
             result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", timeout=5, check=False)
         except (OSError, subprocess.TimeoutExpired):
             fail("router_auth_unavailable", "无法读取回复模型的钥匙串凭证。")
-        if result.returncode or not result.stdout.strip():
-            fail("router_auth_unavailable", "回复模型的钥匙串凭证不可用。")
-        key = result.stdout.strip()
-    if key is not None and (len(key) > 8192 or any(ord(c) < 33 or ord(c) > 126 for c in key)):
-        fail("router_auth_unavailable", "回复模型凭证格式不正确。")
-    return key
+        key = None if result.returncode else normalize_router_secret(result.stdout)
+        if not key:
+            fail("router_auth_unavailable", "钥匙串中没有可用的回复模型凭证（服务名 %s）。请新建通用密码，账号为当前短用户名；不会读取其他工具的条目。" % config["keychain_service"])
+        return key
+    return None
 
 
 def router_http(config, endpoint, payload=None):
@@ -526,11 +588,15 @@ def router_http(config, endpoint, payload=None):
         connection.request("GET" if payload is None else "POST", "/v1/" + endpoint, body=body, headers=headers)
         response = connection.getresponse()
         if response.status in (401, 403):
-            fail("router_auth_required", "9Router 需要有效凭证，请配置环境变量或钥匙串引用。")
+            if secret:
+                fail("router_auth_required", "回复模型拒绝了当前凭证（HTTP %d）。请核对本机环境变量或钥匙串；不会改用其他工具保存的账号。" % response.status)
+            fail("router_auth_required", "回复模型要求凭证（HTTP %d），本次没有附带密钥。若不需要认证，请关闭钥匙串选项；需要时配置环境变量或钥匙串，不要把密钥写进地址。" % response.status)
         if response.status in (429, 529):
             fail("router_busy", "9Router 或选定上游当前限流，请稍后手动重试。")
+        if response.status == 404:
+            fail("router_http_error", "回复模型返回 HTTP 404。请确认地址以 /v1 结尾，例如 %s。" % config["base_url"])
         if not 200 <= response.status < 300:
-            fail("router_http_error", "9Router 未完成请求（HTTP %d）。" % response.status)
+            fail("router_http_error", "9Router 未完成请求（HTTP %d）。没有生成推测结果。" % response.status)
         chunks, received = [], 0
         while True:
             remaining = deadline - time.monotonic()
@@ -557,7 +623,7 @@ def router_http(config, endpoint, payload=None):
     except (OSError, http.client.HTTPException):
         if timed_out.is_set():
             fail("router_timeout", "回复模型请求超时，已停止等待。")
-        fail("router_unavailable", "无法连接本机 9Router，请检查地址和运行状态。")
+        fail("router_unavailable", "无法连接 %s。127.0.0.1 指运行本应用的这台电脑；请确认服务已启动，或关闭回复生成。没有发送聊天。" % config["base_url"])
     finally:
         if timer:
             timer.cancel()
@@ -578,7 +644,7 @@ def router_models(value):
             seen.add(identifier)
             models.append({"id": identifier})
     if not models:
-        fail("router_models_empty", "9Router 当前没有返回可选模型。")
+        fail("router_models_empty", "9Router 已连通，但没有返回可选模型。请先配置上游；列表为空不代表密钥一定无效。")
     return {"ok": True, "models": models, "base_url": config["base_url"],
             "cloud_sent": False, "notice": "已读取本机模型列表，尚未发送聊天或验证上游推理。"}
 
@@ -699,9 +765,11 @@ def analyze(raw, history, helper=DEFAULT_HELPER):
 def dispatch(command, request, data_dir=DEFAULT_DATA, helper=DEFAULT_HELPER):
     history = History(data_dir)
     if command in ("status", "stats"):
+        setup, hint = credential_setup_fields(helper)
         return {"ok": True, "backend_ready": True, "helper_available": Path(helper).expanduser().is_file(),
-                "credential_status": "not_checked", "cloud_sent": False,
-                "storage": str(history.path), "history": history.stats(), "python": sys.version.split()[0]}
+                "credential_status": "not_checked", "credential_setup": setup, "credential_hint": hint,
+                "cloud_sent": False, "storage": str(history.path), "history": history.stats(),
+                "python": sys.version.split()[0]}
     if command == "demo":
         fixture = demo_fixture()
         return {"ok": True, "request": {key: value for key, value in fixture.items() if key != "history"},

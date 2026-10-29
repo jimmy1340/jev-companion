@@ -4,15 +4,26 @@ This is an early personal project. Contributions that improve reproducibility, W
 
 ## Run relevant checks
 
+Run these from the repository root. They use fixtures only: no WeChat window, production credential, or live inference.
+
 ```sh
+# Any machine with Python 3.9 or newer, including Linux
 python3 -m unittest discover -s macos/backend/tests -v
-# macOS only: reader fixtures, state fixtures and Python tests
+
+# macOS only. Needs Command Line Tools (xcrun, swiftc) and /usr/bin/python3 >= 3.9.
 bash macos/test.sh
-# .NET SDK 10: portable core tests
+bash macos/build.sh
+
+# .NET SDK 10. The project below is the portable core, so it can run on Linux or macOS.
 dotnet run --project windows/Tests/Jev.Tests.csproj -c Release
+
+# Windows app publish. Cross-compile from macOS is possible; running the window needs Windows.
+dotnet publish windows/App/Jev.Windows.csproj -c Release -r win-x64 --self-contained true -o dist/windows
 ```
 
-Build the affected native app when changing UI or platform code. Windows OCR and Accessibility compatibility need manual testing in addition to synthetic tests; include the exact OS and WeChat version and distinguish a build result from a manual result.
+`macos/build.sh` refuses to continue when `/usr/bin/python3` is older than 3.9. It does not look up Homebrew or pyenv. `dotnet --list-sdks` should show a `10.0` SDK before the Windows commands. Outputs belong in `dist/` and `macos/.build/`; do not commit them, `settings.json`, or a key.
+
+Build the affected native app when changing UI or platform code. Windows OCR and Accessibility compatibility need manual testing in addition to synthetic tests; include the exact OS and WeChat version and distinguish a build result from a manual result. A Linux result does not cover SwiftUI copy or the WPF window.
 
 ## Report a bug
 

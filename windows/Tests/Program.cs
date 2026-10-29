@@ -82,6 +82,68 @@ var failure = JsonSerializer.Deserialize<ReaderReply>("{\"Capture\":null,\"Error
 Check(failure.Capture == null && failure.CanUseVisual, "missing UIA anchor becomes explicit visual fallback");
 var noWindow = new ReaderReply(null, "没有微信窗口", null);
 Check(!noWindow.CanUseVisual, "missing target does not trigger another capture");
+Check(Contract.DescribeHttpStatus(401, true).Contains("401") && Contract.DescribeHttpStatus(401, true).Contains("拒绝"), "rejected key hint");
+Check(Contract.DescribeHttpStatus(401, false).Contains("没有附带") && !Contract.DescribeHttpStatus(401, false).Contains("SECRET"), "missing key hint");
+Check(Contract.DescribeHttpStatus(404, false).Contains("/v1"), "404 hints at /v1");
+Check(Contract.DescribeHttpStatus(429, true).Contains("限流"), "rate limit hint");
+Check(Contract.ConnectionFailureHint("http://127.0.0.1:20128/v1").Contains("这台电脑"), "loopback failure hint");
+Check(Contract.ConnectionFailureHint("https://example.com/v1").Contains("HTTPS"), "remote failure hint");
+var missingSecret = Contract.SecretIssue("  ", true);
+Check(missingSecret != null && missingSecret.Contains("尚未填写") && missingSecret.Contains("不会读取其他工具"), "blank secret is missing");
+var quotedSecret = Contract.SecretIssue("\"abc\"", false);
+Check(quotedSecret != null && quotedSecret.Contains("引号") && !quotedSecret.Contains("abc"), "quoted secret rejected without echo");
+var messySecret = Contract.SecretIssue("SENTINEL\nkey", false);
+Check(messySecret != null && messySecret.Contains("格式") && !messySecret.Contains("SENTINEL"), "multiline secret rejected without echo");
+Check(Contract.SecretIssue("  sk-fixture  ", false) == null, "surrounding space is acceptable");
+Check(Contract.OptionalSecret("  sk-fixture  ", "9Router 密钥") == "sk-fixture", "secret trimmed before use");
+Reject(() => Contract.ValidateConnectionDraft(false, "http://127.0.0.1:20128/v1", "  ", "", ""), "router mode needs a model");
+Reject(() => Contract.ValidateConnectionDraft(true, "http://127.0.0.1:20128/v1", "", "", "  "), "Jev mode needs a key");
+Contract.ValidateConnectionDraft(true, "not a url", "", "", "sk-fixture");
+Check(true, "Jev mode without a reply model does not require a router URL");
+string hiddenDraft = "";
+try { Contract.ValidateConnectionDraft(false, "http://127.0.0.1:20128/v1", "m", "SENTINEL\nkey", ""); }
+catch (Exception e) { hiddenDraft = e.Message; }
+Check(hiddenDraft.Contains("格式") && !hiddenDraft.Contains("SENTINEL"), "draft validation hides the secret");
+Check(Contract.StartupHint(false, false, false, false).Contains("第一次"), "first run hint");
+Check(Contract.StartupHint(true, true, false, false).Contains("TypeSafe"), "saved Jev mode without key");
+Check(Contract.StartupHint(true, false, false, false).Contains("回复模型"), "saved router mode without model");
+Check(Contract.StartupHint(true, false, false, true).Contains("逐条分析"), "configured startup");
+using (var handler = new FixtureHandler(HttpStatusCode.OK, "{\"data\":[]}"))
+using (var client = new ModelClient(handler))
+{
+    string error = ""; try { await client.Models(connection, CancellationToken.None); } catch (Exception e) { error = e.Message; }
+    Check(error.Contains("没有返回可选模型") && !error.Contains("test-secret"), "empty model list is explicit");
+}
+using (var handler = new FixtureHandler(HttpStatusCode.NotFound, "secret-body"))
+using (var client = new ModelClient(handler))
+{
+    string error = ""; try { await client.Models(connection, CancellationToken.None); } catch (Exception e) { error = e.Message; }
+    Check(error.Contains("404") && error.Contains("/v1") && !error.Contains("secret-body") && !error.Contains("test-secret"), "404 hint hides body and key");
+}
+using (var handler = new FixtureHandler(HttpStatusCode.Unauthorized, "hidden"))
+using (var client = new ModelClient(handler))
+{
+    string error = ""; try { await client.Models(connection with { RouterKey = "" }, CancellationToken.None); } catch (Exception e) { error = e.Message; }
+    Check(error.Contains("没有附带") && handler.Auth == null, "optional router key omits Authorization");
+}
+using (var handler = new FixtureHandler(HttpStatusCode.OK, "{}"))
+using (var client = new ModelClient(handler))
+{
+    string error = ""; try { await client.Analyze(connection with { RouterKey = "SENTINEL\nbad" }, capture, 0, CancellationToken.None); } catch (Exception e) { error = e.Message; }
+    Check(handler.Uri == null && error.Contains("格式") && !error.Contains("SENTINEL"), "malformed router key is not sent");
+}
+using (var handler = new FixtureHandler(HttpStatusCode.OK, "{}"))
+using (var client = new ModelClient(handler))
+{
+    string error = ""; try { await client.Analyze(connection with { UseJev = true, JevKey = "\"jev-fixture\"" }, capture, 0, CancellationToken.None); } catch (Exception e) { error = e.Message; }
+    Check(handler.Uri == null && error.Contains("引号") && !error.Contains("jev-fixture"), "quoted Jev key is not sent");
+}
+using (var handler = new FixtureHandler(HttpStatusCode.OK, "{}"))
+using (var client = new ModelClient(handler))
+{
+    string error = ""; try { await client.Analyze(connection with { UseJev = true, JevKey = "  jev-fixture  ", Model = "" }, capture, 0, CancellationToken.None); } catch (Exception e) { error = e.Message; }
+    Check(handler.Uri == "https://api.typesafe.ai/v1/systemone" && handler.Auth == "Bearer jev-fixture" && !error.Contains("jev-fixture"), "trimmed Jev key goes only to TypeSafe");
+}
 Console.WriteLine($"{passed} checks passed.");
 
 sealed class FixtureHandler(HttpStatusCode status, string response, bool wait = false) : HttpMessageHandler

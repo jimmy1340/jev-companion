@@ -23,6 +23,75 @@ public static class Contract
         capture.Title, capture.Source, messages = capture.Messages.Take(index + 1), config.BaseUrl,
         config.Model, config.UseJev, credentials = Hash(config.RouterKey + "\0" + config.JevKey)
     }));
+    public static string? SecretIssue(string? key, bool required)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return required ? "尚未填写。请使用这台电脑自己的密钥；安装包不含开发者账号，也不会读取其他工具保存的密钥。" : null;
+        var trimmed = key.Trim();
+        if (trimmed.Length >= 2 && ((trimmed[0] == '"' && trimmed[^1] == '"') || (trimmed[0] == '\'' && trimmed[^1] == '\'')))
+            return "不要带两侧引号。粘贴密钥本身即可，密钥不会显示在错误里。";
+        if (trimmed.Length > 8192 || trimmed.Any(c => c < 33 || c > 126))
+            return "格式不正确。请使用一行可打印字符，不要包含空格或换行。";
+        return null;
+    }
+    public static string RequireSecret(string? key, string label)
+    {
+        var issue = SecretIssue(key, true);
+        if (issue != null) throw new InvalidOperationException(label + issue);
+        return key!.Trim();
+    }
+    public static string? OptionalSecret(string? key, string label)
+    {
+        var issue = SecretIssue(key, false);
+        if (issue != null) throw new InvalidOperationException(label + issue);
+        return string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+    }
+    public static void ValidateConnectionDraft(bool useJev, string? url, string? model, string? routerKey, string? jevKey)
+    {
+        var routerIssue = SecretIssue(routerKey, false);
+        if (routerIssue != null) throw new InvalidOperationException("9Router 密钥" + routerIssue);
+        if (useJev)
+        {
+            var jevIssue = SecretIssue(jevKey, true);
+            if (jevIssue != null) throw new InvalidOperationException("TypeSafe / Jev 密钥" + jevIssue);
+        }
+        var modelText = (model ?? "").Trim();
+        if (!useJev || modelText.Length > 0)
+        {
+            Endpoint(url ?? "", "models");
+            if (!useJev && modelText.Length == 0)
+                throw new InvalidOperationException("9Router 模式需要填写或从列表选择回复模型。可先刷新模型列表；服务不需要认证时密钥留空。");
+        }
+    }
+    public static string DescribeHttpStatus(int status, bool sentCredential)
+    {
+        if (status is 401 or 403)
+            return sentCredential
+                ? $"模型服务拒绝了当前密钥（HTTP {status}）。请在连接设置核对本机保存的密钥；安装包不会带入其他电脑或开发者的账号。"
+                : $"模型服务要求密钥（HTTP {status}），本次没有附带。不需要认证时可留空；需要时填写这台电脑的密钥，不要把密钥写进地址。";
+        if (status == 404)
+            return "模型服务返回 HTTP 404。地址需要以 /v1 结尾，例如 http://127.0.0.1:20128/v1。127.0.0.1 指运行 Jev 的这台电脑。";
+        if (status is 429 or 529)
+            return $"模型服务当前限流（HTTP {status}），请稍后手动重试。没有生成推测结果。";
+        return $"模型服务返回 HTTP {status}；检查连接、密钥、模型或额度。没有生成推测结果。";
+    }
+    public static string ConnectionFailureHint(string? baseUrl)
+    {
+        var loopback = !string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl.Trim(), UriKind.Absolute, out var url) && url.IsLoopback;
+        return loopback
+            ? "无法连接本机模型服务。127.0.0.1 指运行 Jev 的这台电脑，请确认兼容服务已启动。没有发送聊天。"
+            : "无法连接模型服务。请检查 HTTPS 地址和网络。没有发送聊天。";
+    }
+    public static string StartupHint(bool settingsFileExists, bool useJev, bool hasJevKey, bool hasModel)
+    {
+        if (!settingsFileExists)
+            return "第一次使用：打开「连接设置」，填写这台电脑自己的 TypeSafe 或 9Router 信息。安装包不含开发者密钥。示例已载入，点击分析才会调用模型。";
+        if (useJev && !hasJevKey)
+            return "已选择 Jev 判断，但还没有保存 TypeSafe 密钥。请在连接设置填写这台电脑的密钥；不会使用其他电脑的账号。";
+        if (!useJev && !hasModel)
+            return "9Router 模式还没有回复模型。打开连接设置，确认地址后刷新列表并保存。不需要认证时密钥留空。";
+        return "示例已载入。点击逐条分析才会调用模型；请确认连接设置里是这台电脑的密钥。";
+    }
     public static Uri Endpoint(string input, string path)
     {
         if (!Uri.TryCreate(input.Trim().TrimEnd('/'), UriKind.Absolute, out var url) ||

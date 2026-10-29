@@ -257,6 +257,43 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn("SECRET", str(caught.exception))
         self.assertEqual(caught.exception.code, "provider_error")
 
+    def test_helper_failures_are_specific_and_do_not_echo_stderr(self):
+        secret = "SUPERSECRET_FIXTURE"
+        cases = [
+            ("TypeSafe credential format rejected\n" + secret, "credential_invalid", "格式"),
+            ("No TypeSafe credential: TYPESAFE_API_KEY is empty\n" + secret, "credential_unavailable", "为空"),
+            ("TypeSafe HTTP 401\n" + secret, "credential_rejected", "401"),
+            ("No TypeSafe credential\n" + secret, "credential_unavailable", "jev-companion-typesafe"),
+            ("TypeSafe HTTP 429\n" + secret, "provider_busy", "限流"),
+            ("socket failure " + secret, "provider_error", "未成功"),
+        ]
+        for stderr, code, snippet in cases:
+            completed = subprocess.CompletedProcess([], 1, "", stderr)
+            with self.subTest(code=code), mock.patch.object(engine.subprocess, "run", return_value=completed):
+                with self.assertRaises(engine.EngineError) as caught:
+                    engine.helper_call({}, engine.BUNDLED_HELPER)
+            self.assertEqual(caught.exception.code, code)
+            self.assertIn(snippet, caught.exception.message)
+            self.assertNotIn(secret, caught.exception.message)
+
+    def test_status_reports_env_shape_without_key_or_network(self):
+        with mock.patch.dict(engine.os.environ, {"TYPESAFE_API_KEY": "fixture-key-SHOULD-NOT-LEAK"}):
+            result = engine.dispatch("status", {}, self.data_dir)
+        self.assertEqual(result["credential_status"], "not_checked")
+        self.assertEqual(result["credential_setup"], "env_present")
+        self.assertFalse(result["cloud_sent"])
+        self.assertNotIn("fixture-key-SHOULD-NOT-LEAK", json.dumps(result))
+        self.assertNotIn("自定义", result["credential_hint"])
+        with mock.patch.dict(engine.os.environ, {"TYPESAFE_API_KEY": "LEAKED_SECRET_VALUE\nmore"}):
+            invalid = engine.dispatch("status", {}, self.data_dir)
+        self.assertEqual(invalid["credential_setup"], "env_invalid")
+        self.assertNotIn("LEAKED_SECRET_VALUE", json.dumps(invalid))
+        with mock.patch.dict(engine.os.environ, {}, clear=True):
+            missing = engine.dispatch("status", {}, self.data_dir, str(Path(self.temp.name) / "custom-helper"))
+        self.assertEqual(missing["credential_setup"], "env_unset")
+        self.assertIn("钥匙串", missing["credential_hint"])
+        self.assertIn("自定义", missing["credential_hint"])
+
     def test_real_subprocess_protocol_without_shell(self):
         helper = Path(self.temp.name) / "helper with spaces"
         payload_path = Path(self.temp.name) / "payload.json"

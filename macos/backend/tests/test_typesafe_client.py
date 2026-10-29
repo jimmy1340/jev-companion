@@ -27,8 +27,46 @@ class ClientTests(unittest.TestCase):
     def test_missing_keychain_credential_is_sanitized(self):
         result = subprocess.CompletedProcess([], 1, "", "private diagnostic")
         with mock.patch.object(client.sys, "platform", "darwin"), mock.patch.object(client.subprocess, "run", return_value=result):
-            with self.assertRaisesRegex(client.ClientError, "^No TypeSafe credential$"):
+            with self.assertRaises(client.ClientError) as caught:
                 client.credential()
+        self.assertIn("No TypeSafe credential", str(caught.exception))
+        self.assertIn("jev-companion-typesafe", str(caught.exception))
+        self.assertNotIn("private diagnostic", str(caught.exception))
+
+    @mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "   "}, clear=True)
+    def test_empty_environment_credential_does_not_read_keychain(self):
+        with mock.patch.object(client.sys, "platform", "darwin"), mock.patch.object(client.subprocess, "run") as process:
+            with self.assertRaisesRegex(client.ClientError, "TYPESAFE_API_KEY is empty"):
+                client.credential()
+        process.assert_not_called()
+
+    @mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "test-fixture-key\n"}, clear=True)
+    def test_surrounding_whitespace_is_removed_before_use(self):
+        with mock.patch.object(client.subprocess, "run") as process:
+            self.assertEqual(client.credential(), "test-fixture-key")
+        process.assert_not_called()
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_non_darwin_missing_credential_does_not_touch_keychain(self):
+        with mock.patch.object(client.sys, "platform", "linux"), mock.patch.object(client.subprocess, "run") as process:
+            with self.assertRaisesRegex(client.ClientError, "does not read other tools"):
+                client.credential()
+        process.assert_not_called()
+
+    def test_setup_report_never_returns_the_key(self):
+        samples = {
+            "env_unset": {},
+            "env_empty": {"TYPESAFE_API_KEY": "  "},
+            "env_invalid": {"TYPESAFE_API_KEY": "leak-this-key\nmore"},
+            "env_present": {"TYPESAFE_API_KEY": "leak-this-key"},
+        }
+        for expected, values in samples.items():
+            with self.subTest(expected=expected), mock.patch.dict(os.environ, values, clear=True):
+                report = client.setup_report()
+                blob = json.dumps(report, ensure_ascii=False)
+                self.assertEqual(report["credential_setup"], expected)
+                self.assertNotIn("leak-this-key", blob)
+                self.assertNotIn("TYPESAFE_API_KEY=", blob)
 
     @mock.patch.dict(os.environ, {"JEV_TYPESAFE_KEYCHAIN_SERVICE": "test-service", "JEV_TYPESAFE_KEYCHAIN_ACCOUNT": "test-account"}, clear=True)
     def test_explicit_keychain_reference(self):
@@ -38,9 +76,12 @@ class ClientTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0], ["/usr/bin/security", "find-generic-password", "-s", "test-service", "-a", "test-account", "-w"])
 
     def test_invalid_credential_cannot_inject_headers(self):
-        with mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "bad\r\nX-Secret: value"}, clear=True):
-            with self.assertRaisesRegex(client.ClientError, "No TypeSafe credential"):
-                client.credential()
+        for raw in ("bad\r\nX-Secret: value", '"test-fixture-key"', "bad key"):
+            with self.subTest(raw=raw), mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": raw}, clear=True):
+                with mock.patch.object(client.subprocess, "run") as process:
+                    with self.assertRaisesRegex(client.ClientError, "^TypeSafe credential format rejected$"):
+                        client.credential()
+                process.assert_not_called()
 
     def test_success_preserves_official_response(self):
         body = {"answers": {}, "usage": {"input_tokens": 8}, "model": "jev-fixture"}

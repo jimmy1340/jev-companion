@@ -4,8 +4,8 @@
 
 - Verify the Windows 0.4.1 UI Automation and window OCR paths on real machines, including occlusion, region reuse, DPI and WeChat version changes.
 - Gather synthetic compatibility fixtures for newer macOS WeChat versions.
-- Improve first-run credential setup and error guidance without bundling keys or changing other tools' accounts.
-- Document installation and build reproducibility across clean machines.
+- Improve first-run credential setup and error guidance without bundling keys or changing other tools' accounts. Source now separates a missing credential, an empty variable, a malformed key, and HTTP 401, and says where to put a key for this computer. A clean machine should still confirm the macOS Keychain prompt and the Windows settings dialog.
+- Document installation and build reproducibility across clean machines. README, the platform READMEs, and CONTRIBUTING now name the toolchains and which checks run without WeChat. A clean macOS and Windows install remains the confirmation that those steps match a fresh machine.
 
 ## Later candidates
 

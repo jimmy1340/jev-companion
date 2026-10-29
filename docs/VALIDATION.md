@@ -21,6 +21,10 @@ The earlier macOS 0.3 prototype had manual verification of reading text from a r
 
 Windows 0.4.0 had user evidence that the UI opened but chat-control detection failed. Windows 0.4.1 added raw UIA structure handling and a selected-window OCR fallback. This new path was cross-compiled and tested in the portable core; installation, actual OCR, occlusion handling and region reuse still require real Windows verification.
 
+## Maintenance pass on 2026-10-29
+
+Credential guidance and the install notes were updated in source. On Linux, the Python backend tests passed (67) and the Windows portable core passed with .NET SDK 10.0.403 (64 checks). Neither run read WeChat or called live inference. Swift fixtures, `macos/build.sh`, and the WPF window were not executed here; those still need macOS and Windows. The manual checks below are unchanged.
+
 ## Remaining manual checks
 
 - Configure the standalone macOS TypeSafe client on a clean machine and analyze only fictional text first.

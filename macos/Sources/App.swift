@@ -321,7 +321,7 @@ struct CompanionView: View {
                         .disabled(model.busy || model.reading)
                 }
                 Text(error).font(.system(size: 10)).foregroundStyle(.secondary)
-                    .lineLimit(2).help(error)
+                    .lineLimit(6).help(error)
             }.padding(.horizontal, 11).padding(.vertical, 8)
                 .frame(maxWidth: 294, alignment: .leading)
                 .jevSurface(radius: 12)
@@ -557,7 +557,7 @@ struct CompanionView: View {
             VStack(spacing: 4) {
                 Text(model.mode == .wechat ? "打开一个微信聊天" : model.mode == .manual ? "粘贴你想分析的对话" : "正在准备示例")
                     .font(.system(size: 15, weight: .semibold))
-                Text(model.mode == .wechat ? "点击下方「读取并逐条分析」，\n每条对方消息下方都会生成专属分析卡。" : "每条对方气泡下面，\n都会保留这一刻的 Jev 分析。")
+                Text(emptyDetail)
                     .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .lineSpacing(2)
             }
@@ -567,6 +567,17 @@ struct CompanionView: View {
                 featureBadge("人工确认发送", icon: "person.crop.circle.badge.checkmark")
             }.padding(.top, 4)
         }.frame(maxWidth: .infinity).padding(.vertical, 48)
+    }
+
+    private var emptyDetail: String {
+        switch model.mode {
+        case .wechat:
+            return "读取当前窗口已暴露的文字。点击分析前会确认范围，并需要你自己的 TypeSafe 凭证。"
+        case .manual:
+            return "每行以「我：」或「对方：」开头。未配置凭证时会提示钥匙串或 TYPESAFE_API_KEY，不会改用其他工具的账号。"
+        case .demo:
+            return "示例是虚构对话。点击分析才会调用模型；从 Finder 打开时请先配置钥匙串 jev-companion-typesafe。"
+        }
     }
 
     private func featureBadge(_ text: String, icon: String) -> some View {
@@ -641,10 +652,15 @@ struct CompanionView: View {
                                     ForEach(model.modelIDs, id: \.self) { Text($0).tag($0) }
                                 }.onChange(of: model.selectedModel) { _ in model.providerChanged() }
                             }
-                            Text("Jev 使用 TYPESAFE_API_KEY 或 Jev 专用钥匙串；9Router 使用 jev-companion-router 条目，应用不保存明文密钥。")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
-                            Text("分析会把所选文字发送至 Jev 和选定模型的云服务。首次使用真实会话时会确认处理范围。")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("TypeSafe 凭证不会随应用打包，也不会读取其他工具的账号。")
+                                Text("Finder 启动：钥匙串通用密码，服务名 jev-companion-typesafe，账号 \(model.routerCredentialAccount)（与 id -un 相同）。")
+                                Text("终端启动：先设置 TYPESAFE_API_KEY 再打开应用。Finder 不会继承终端变量。")
+                                Text("9Router 可选。需要认证时用钥匙串 \(model.routerCredentialService)，账号同样是当前短用户名；不需要则关闭上方钥匙串选项。")
+                                Text("401 表示密钥被拒绝；格式错误表示含空格、换行或引号。示例在点击分析前不会调用模型。")
+                                Text("分析会把所选文字发送至 Jev 和选定模型的云服务。首次使用真实会话时会确认处理范围。")
+                            }
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
                         }.padding(.top, 10)
                     }
                     if model.mode != .demo { memorySettings }

@@ -15,6 +15,13 @@ elif [[ -n "${1:-}" ]]; then
     exit 2
 fi
 
+# The bundled app launches /usr/bin/python3, not a Homebrew or pyenv interpreter.
+if ! /usr/bin/python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)'; then
+    printf 'Need /usr/bin/python3 3.9 or newer from Apple Command Line Tools.\n' >&2
+    printf 'Homebrew or pyenv Python is not used. Install the tools with: xcode-select --install\n' >&2
+    exit 1
+fi
+
 mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 BUILD_DIR="$(cd "$BUILD_DIR" && pwd)"
 SWIFTC="$(/usr/bin/xcrun --find swiftc)"
