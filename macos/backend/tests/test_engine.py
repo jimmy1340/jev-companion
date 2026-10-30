@@ -2,8 +2,10 @@
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -354,6 +356,145 @@ class EngineTests(unittest.TestCase):
             self.assertFalse(engine.dispatch("demo", {}, self.data_dir)["cloud_sent"])
             helper.assert_not_called()
         self.assertFalse(self.history.path.exists())
+
+    def test_loose_umask_keeps_database_and_journal_private(self):
+        seen = []
+        real_connect = engine.sqlite3.connect
+
+        def wrapped(*args, **kwargs):
+            conn = real_connect(*args, **kwargs)
+            database = args[0] if args else kwargs.get("database")
+
+            def trace(_sql):
+                if not isinstance(database, str) or database.startswith("file:"):
+                    return
+                journal = Path(database + "-journal")
+                if journal.exists():
+                    seen.append(journal.stat().st_mode & 0o777)
+
+            conn.set_trace_callback(trace)
+            return conn
+
+        previous = os.umask(0)
+        try:
+            with mock.patch.object(engine.sqlite3, "connect", wrapped):
+                self.assertEqual(self.history.save(request()), 1)
+            self.assertEqual(self.history.directory.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(self.history.path.stat().st_mode & 0o777, 0o600)
+            self.assertTrue(seen, "save did not create a rollback journal")
+            self.assertTrue(all(mode == 0o600 for mode in seen), seen)
+            current = os.umask(0)
+            os.umask(current)
+            self.assertEqual(current, 0)
+            self.assertEqual(self.history.recent("chat-a")[0]["text"], "周末一起吃饭吗？")
+        finally:
+            os.umask(previous)
+
+    def test_existing_loose_directory_is_tightened_on_save_and_read(self):
+        self.data_dir.mkdir()
+        self.data_dir.chmod(0o755)
+        self.assertEqual(self.history.save(request()), 1)
+        self.assertEqual(self.data_dir.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(self.history.path.stat().st_mode & 0o777, 0o600)
+        self.data_dir.chmod(0o755)
+        self.history.path.chmod(0o644)
+        self.assertEqual(self.history.stats()["messages"], 1)
+        self.assertEqual(self.data_dir.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(self.history.path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.history.save(request()), 0)
+
+    def test_symlink_hardlink_and_fifo_history_are_not_opened(self):
+        self.data_dir.mkdir()
+        outside = self.data_dir / "outside.txt"
+        outside.write_text("SAFE")
+        self.history.path.symlink_to(outside)
+        with self.assertRaises(engine.EngineError) as caught:
+            self.history.save(request())
+        self.assertEqual(caught.exception.code, "storage_error")
+        self.assertIn("符号链接", caught.exception.message)
+        self.assertNotIn("周末", caught.exception.message)
+        self.assertEqual(outside.read_text(), "SAFE")
+        self.history.path.unlink()
+
+        self.assertEqual(self.history.save(request()), 1)
+        alias = self.data_dir / "alias.sqlite3"
+        os.link(self.history.path, alias)
+        with self.assertRaises(engine.EngineError) as caught:
+            self.history.save(request(texts=[{"id": "m-2", "sender": "other", "text": "不应写入"}]))
+        self.assertEqual(caught.exception.code, "storage_error")
+        self.assertIn("硬链接", caught.exception.message)
+        connection = sqlite3.connect(alias)
+        stored = [row[0] for row in connection.execute("SELECT text FROM messages")]
+        connection.close()
+        self.assertEqual(stored, ["周末一起吃饭吗？"])
+        alias.unlink()
+
+        target = self.data_dir / "real.sqlite3"
+        self.history.path.rename(target)
+        self.history.path.symlink_to(target)
+        with self.assertRaises(engine.EngineError) as caught:
+            self.history.recent("chat-a")
+        self.assertIn("符号链接", caught.exception.message)
+        with self.assertRaises(engine.EngineError):
+            self.history.forget("chat-a")
+        connection = sqlite3.connect(target)
+        self.assertEqual(connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0], 1)
+        connection.close()
+        self.history.path.unlink()
+
+        os.mkfifo(self.history.path)
+        with self.assertRaises(engine.EngineError) as caught:
+            self.history.save(request())
+        self.assertIn("普通文件", caught.exception.message)
+        self.assertTrue(stat.S_ISFIFO(self.history.path.lstat().st_mode))
+
+    def test_sidecar_link_is_not_written_through(self):
+        self.data_dir.mkdir()
+        outside = self.data_dir / "outside.txt"
+        outside.write_text("SAFE")
+        journal = Path(str(self.history.path) + "-journal")
+        journal.symlink_to(outside)
+        with self.assertRaises(engine.EngineError) as caught:
+            self.history.save(request())
+        self.assertEqual(caught.exception.code, "storage_error")
+        self.assertIn("临时文件", caught.exception.message)
+        self.assertIn("符号链接", caught.exception.message)
+        self.assertEqual(outside.read_text(), "SAFE")
+        self.assertFalse(self.history.path.exists())
+        journal.unlink()
+
+        os.link(outside, journal)
+        with self.assertRaises(engine.EngineError) as caught:
+            self.history.save(request())
+        self.assertIn("硬链接", caught.exception.message)
+        self.assertEqual(outside.read_text(), "SAFE")
+        self.assertFalse(self.history.path.exists())
+
+    def test_directory_symlink_is_not_followed_for_chmod(self):
+        real = self.data_dir.parent / "real-history"
+        real.mkdir()
+        real.chmod(0o755)
+        self.data_dir.symlink_to(real)
+        self.assertEqual(self.history.save(request()), 1)
+        self.assertEqual(real.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((real / "history.sqlite3").stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.history.recent("chat-a")[0]["text"], "周末一起吃饭吗？")
+
+    def test_cli_symlink_history_is_storage_error_without_chat_text(self):
+        self.data_dir.mkdir()
+        outside = self.data_dir / "outside.txt"
+        outside.write_text("SAFE")
+        self.history.path.symlink_to(outside)
+        result = subprocess.run(
+            [sys.executable, str(ENGINE_PATH), "import", "--data-dir", str(self.data_dir)],
+            input=json.dumps(request()), text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["error"]["code"], "storage_error")
+        self.assertNotIn("周末", payload["error"]["message"])
+        self.assertNotIn("SAFE", payload["error"]["message"])
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(outside.read_text(), "SAFE")
 
 
 if __name__ == "__main__":

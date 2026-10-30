@@ -14,7 +14,7 @@
 /usr/bin/python3 backend/engine.py demo | /usr/bin/python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["request"], ensure_ascii=False))' | /usr/bin/python3 backend/engine.py analyze
 ```
 
-各命令支持 `--data-dir /绝对路径/目录`，默认 `~/Library/Application Support/JevWeChatAssistant/`。`--helper` 可指定受信任的本机 TypeSafe 调用器，默认使用随项目提供的 `typesafe_client.py`，可用 `JEV_TYPESAFE_HELPER` 覆盖。默认客户端读取 `TYPESAFE_API_KEY` 或专用 Keychain；分析引擎不存储或输出密钥，也不更改默认账号。
+各命令支持 `--data-dir /绝对路径/目录`，默认 `~/Library/Application Support/JevWeChatAssistant/`。保存或读取时，若该目录本身不是符号链接，会把目录权限收紧为 `0700`，数据库文件收紧为 `0600`。SQLite 默认以 `0644` 创建库和回滚 journal，进程 umask 为 `0022` 时这些文件仍可被其他用户读取；写入事务期间会暂时把 umask 收成 `0077`，避免 journal 在提交前暴露聊天原文。`history.sqlite3` 及其 `-journal`、`-wal`、`-shm` 如果是符号链接、硬链接或非普通文件，读写都会停止，且不会顺着链接写入。数据目录本身是符号链接时，不会 chmod 链接目标。这不是应用层加密。`--helper` 可指定受信任的本机 TypeSafe 调用器，默认使用随项目提供的 `typesafe_client.py`，可用 `JEV_TYPESAFE_HELPER` 覆盖。默认客户端读取 `TYPESAFE_API_KEY` 或专用 Keychain；分析引擎不存储或输出密钥，也不更改默认账号。
 
 ## 输入
 

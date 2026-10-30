@@ -14,7 +14,7 @@ Each historical card uses a prefix of the conversation. macOS disables memory re
 
 ## What stays on the device
 
-macOS history is off by default. When enabled it stores original text, source and conversation identity in SQLite under `~/Library/Application Support/JevWeChatAssistant/`. Predictions and drafts are not saved as historical facts. The history is not encrypted by the application. Use appropriate OS account and disk protection for your environment.
+macOS history is off by default. When enabled it stores original text, source and conversation identity in SQLite under `~/Library/Application Support/JevWeChatAssistant/`. Predictions and drafts are not saved as historical facts. The history is not encrypted by the application. On save, and again on read, a real history directory is set to mode 0700 and the database file to mode 0600. The short-lived SQLite journal is created owner-only as well. The tool refuses to open the database, or its `-journal`, `-wal`, or `-shm` file, when that path is a symlink, a hard link, or not a regular file. A symlinked data directory is left unchanged so chmod cannot follow the link onto an unrelated folder. Use appropriate OS account and disk protection for your environment.
 
 Windows keeps chat and analysis in memory and saves only connection settings; sensitive connection values use DPAPI for the current Windows user. macOS TypeSafe credentials come from the process environment or a dedicated Keychain entry. Optional macOS router credentials come from a dedicated Keychain entry.
 
