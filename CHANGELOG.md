@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Local history is forced to owner-only permissions. A real history directory is mode 0700, and the database plus the SQLite rollback journal are mode 0600 even when the process umask would leave SQLite's default 0644 files world-readable. Saves and reads refuse a symlink, hard link, or non-regular database file; `-journal`, `-wal`, and `-shm` links are refused before SQLite opens them. A symlinked data directory is not chmod'd, so the link target keeps its existing mode.
 - First-run credential guidance now distinguishes a missing credential, an empty variable, a malformed key, and a rejected key. Keys are still not bundled, echoed, or taken from another tool's account.
 - Install docs name `/usr/bin/python3` from the Apple Command Line Tools, the .NET SDK 10 requirement, and which tests run without WeChat.
 - `macos/build.sh` stops early when `/usr/bin/python3` is older than 3.9.

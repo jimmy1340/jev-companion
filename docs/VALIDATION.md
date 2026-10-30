@@ -21,6 +21,10 @@ The earlier macOS 0.3 prototype had manual verification of reading text from a r
 
 Windows 0.4.0 had user evidence that the UI opened but chat-control detection failed. Windows 0.4.1 added raw UIA structure handling and a selected-window OCR fallback. This new path was cross-compiled and tested in the portable core; installation, actual OCR, occlusion handling and region reuse still require real Windows verification.
 
+## Maintenance pass on 2026-10-30
+
+History permission checks were added in source. On Linux, `python3 -m unittest discover -s macos/backend/tests -v` passed (73). The new cases cover a loose umask, a pre-existing mode 0755 directory, symlink, hard-link, and fifo database paths, sidecar links, and a symlinked data directory whose target mode must stay put. They use temporary files only. Swift fixtures, the Windows test project, `macos/build.sh`, and the WPF window were not executed; those sources did not change. No WeChat window or live model was used.
+
 ## Maintenance pass on 2026-10-29
 
 Credential guidance and the install notes were updated in source. On Linux, the Python backend tests passed (67) and the Windows portable core passed with .NET SDK 10.0.403 (64 checks). Neither run read WeChat or called live inference. Swift fixtures, `macos/build.sh`, and the WPF window were not executed here; those still need macOS and Windows. The manual checks below are unchanged.

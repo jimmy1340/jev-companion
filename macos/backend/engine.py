@@ -15,10 +15,12 @@ from pathlib import Path
 import re
 import sqlite3
 import socket
+import stat
 import subprocess
 import sys
 import time
 import threading
+from contextlib import contextmanager
 from urllib.parse import urlsplit
 from datetime import datetime, timezone
 
@@ -160,18 +162,98 @@ def message_keys(messages):
         yield key, item
 
 
+@contextmanager
+def private_umask():
+    """Hold umask 0o077 for a history write, then restore the previous value.
+
+    SQLite creates the database and its rollback journal with mode 0o644, then
+    applies the process umask. Umask 0o022 leaves those files world-readable.
+    The journal appears on INSERT, so the restrictive umask has to cover the
+    whole transaction. History writes run on the CLI thread; umask is process-global.
+    """
+    previous = os.umask(0o077)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
 class History:
     def __init__(self, data_dir):
         self.directory = Path(data_dir).expanduser()
         self.path = self.directory / "history.sqlite3"
 
-    def connect(self, write=False):
-        if self.path.is_symlink():
-            fail("storage_error", "历史库不能是符号链接。")
-        if write:
-            self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-            conn = sqlite3.connect(str(self.path), timeout=8)
-            self.path.chmod(0o600)
+    def _sidecars(self):
+        return [Path(str(self.path) + suffix) for suffix in ("-journal", "-wal", "-shm")]
+
+    def _reject_special(self, path, kind):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return
+        except OSError:
+            fail("storage_error", "无法检查%s。" % kind)
+        if stat.S_ISLNK(info.st_mode):
+            fail("storage_error", "%s不能是符号链接。" % kind)
+        if not stat.S_ISREG(info.st_mode):
+            fail("storage_error", "%s必须是普通文件。" % kind)
+        if info.st_nlink > 1:
+            fail("storage_error", "%s不能是硬链接。" % kind)
+
+    def _chmod_regular(self, path, mode, required):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return
+        except OSError:
+            if required:
+                raise
+            return
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            if required:
+                fail("storage_error", "无法把历史库权限收紧为仅所有者可访问。")
+            return
+        try:
+            # follow_symlinks=False avoids chmod of a path swapped for a link mid-write.
+            os.chmod(path, mode, follow_symlinks=False)
+            applied = path.lstat().st_mode & 0o777
+        except OSError:
+            if required:
+                raise
+            return
+        if required and applied != mode:
+            fail("storage_error", "无法把历史库权限收紧为仅所有者可访问。")
+
+    def _tighten_directory(self, required):
+        # Never chmod through a directory symlink: the target might be unrelated.
+        if not self.directory.exists() or self.directory.is_symlink():
+            return
+        try:
+            os.chmod(self.directory, 0o700, follow_symlinks=False)
+            applied = self.directory.lstat().st_mode & 0o777
+        except OSError:
+            if required:
+                raise
+            return
+        if required and applied != 0o700:
+            fail("storage_error", "无法把历史目录权限收紧为仅所有者可进入。")
+
+    def _guard_write_paths(self):
+        self._reject_special(self.path, "历史库")
+        for sidecar in self._sidecars():
+            self._reject_special(sidecar, "历史库临时文件")
+
+    def _open_write(self):
+        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._tighten_directory(required=True)
+        self._guard_write_paths()
+        self._chmod_regular(self.path, 0o600, required=self.path.exists())
+        for sidecar in self._sidecars():
+            self._chmod_regular(sidecar, 0o600, required=False)
+        conn = sqlite3.connect(str(self.path), timeout=8)
+        try:
+            self._chmod_regular(self.path, 0o600, required=True)
+            conn.row_factory = sqlite3.Row
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS messages (
                   row_id INTEGER PRIMARY KEY,
@@ -188,38 +270,55 @@ class History:
                 CREATE INDEX IF NOT EXISTS conversation_messages
                 ON messages(conversation_id, row_id DESC);
             """)
-        elif self.path.exists():
-            conn = sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=8)
-        else:
+        except Exception:
+            conn.close()
+            raise
+        return conn
+
+    def connect(self, write=False):
+        # write=True only covers creation. save() and forget() open the database
+        # inside their own private_umask so the rollback journal stays owner-only.
+        if write:
+            with private_umask():
+                return self._open_write()
+        self._reject_special(self.path, "历史库")
+        if not self.path.exists():
             return None
+        self._tighten_directory(required=False)
+        self._chmod_regular(self.path, 0o600, required=False)
+        conn = sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=8)
         conn.row_factory = sqlite3.Row
         return conn
 
     def save(self, request):
-        conn = self.connect(write=True)
-        inserted = 0
-        try:
-            with conn:
-                for key, message in message_keys(request["messages"]):
-                    existing = conn.execute(
-                        "SELECT sender, text, timestamp FROM messages WHERE conversation_id=? AND message_key=?",
-                        (request["conversation_id"], key),
-                    ).fetchone()
-                    if existing:
-                        if (existing["sender"], existing["text"], existing["timestamp"]) != (
-                                message["sender"], message["text"], message.get("timestamp")):
-                            fail("message_id_conflict", "消息 id 对应的原文发生变化；原记录已保留，请重新读取会话。")
-                        continue
-                    conn.execute("""INSERT INTO messages
-                        (conversation_id, conversation_title, message_key, sender, text, timestamp, source, observed_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
-                            request["conversation_id"], request["conversation_title"], key,
-                            message["sender"], message["text"], message.get("timestamp"),
-                            request["source"], datetime.now(timezone.utc).isoformat()))
-                    inserted += 1
-        finally:
-            conn.close()
-        return inserted
+        # Keep the restrictive umask until commit so the rollback journal is 0600.
+        with private_umask():
+            conn = self._open_write()
+            inserted = 0
+            try:
+                with conn:
+                    for key, message in message_keys(request["messages"]):
+                        existing = conn.execute(
+                            "SELECT sender, text, timestamp FROM messages WHERE conversation_id=? AND message_key=?",
+                            (request["conversation_id"], key),
+                        ).fetchone()
+                        if existing:
+                            if (existing["sender"], existing["text"], existing["timestamp"]) != (
+                                    message["sender"], message["text"], message.get("timestamp")):
+                                fail("message_id_conflict", "消息 id 对应的原文发生变化；原记录已保留，请重新读取会话。")
+                            continue
+                        conn.execute("""INSERT INTO messages
+                            (conversation_id, conversation_title, message_key, sender, text, timestamp, source, observed_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
+                                request["conversation_id"], request["conversation_title"], key,
+                                message["sender"], message["text"], message.get("timestamp"),
+                                request["source"], datetime.now(timezone.utc).isoformat()))
+                        inserted += 1
+                for sidecar in self._sidecars():
+                    self._chmod_regular(sidecar, 0o600, required=False)
+            finally:
+                conn.close()
+            return inserted
 
     def recent(self, conversation_id, exclude_keys=()):
         conn = self.connect()
@@ -249,14 +348,17 @@ class History:
     def forget(self, conversation_id):
         if not self.path.exists():
             return 0
-        conn = self.connect(write=True)
-        try:
-            with conn:
-                conn.execute("PRAGMA secure_delete=ON")
-                deleted = conn.execute("DELETE FROM messages WHERE conversation_id=?", (conversation_id,)).rowcount
-            return deleted
-        finally:
-            conn.close()
+        with private_umask():
+            conn = self._open_write()
+            try:
+                with conn:
+                    conn.execute("PRAGMA secure_delete=ON")
+                    deleted = conn.execute("DELETE FROM messages WHERE conversation_id=?", (conversation_id,)).rowcount
+                for sidecar in self._sidecars():
+                    self._chmod_regular(sidecar, 0o600, required=False)
+                return deleted
+            finally:
+                conn.close()
 
 
 def tokens(text):
