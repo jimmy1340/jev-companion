@@ -40,7 +40,7 @@
 
 ## Day 2 — 2026-10-31：Windows 分析缓存键不要把两把密钥拼在一起
 
-**状态。** Done。`PrefixKey` 对 `RouterKey` 和 `JevKey` 分别做 SHA-256，再写入缓存键，不再用 `\0` 把两把密钥拼成一个字符串。
+**状态。** Done。见 [PR #6](https://github.com/jimmy1340/jev-companion/pull/6)。`PrefixKey` 对 `RouterKey` 和 `JevKey` 分别做 SHA-256，再写入缓存键，不再用 `\0` 把两把密钥拼成一个字符串。
 
 **问题。** `windows/Core/Models.cs` 的 `Contract.PrefixKey` 在哈希前把 `RouterKey + "\0" + JevKey` 拼成一个字符串。`RouterKey="a\0b"`、`JevKey="c"` 与 `RouterKey="a"`、`JevKey="b\0c"` 得到同一缓存键，一张分析卡可能被另一组凭证复用。PR #3 的 `SecretIssue` 会拒绝不可打印字符，所以从设置对话框保存的密钥碰不到这条路径；`PrefixKey` 本身不强制该规则，内存中的 `Connection` 仍可能带入 `\0`。
 
