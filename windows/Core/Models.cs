@@ -21,7 +21,7 @@ public static class Contract
     public static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     public static string PrefixKey(Capture capture, int index, Connection config) => Hash(JsonSerializer.Serialize(new {
         capture.Title, capture.Source, messages = capture.Messages.Take(index + 1), config.BaseUrl,
-        config.Model, config.UseJev, credentials = Hash(config.RouterKey + "\0" + config.JevKey)
+        config.Model, config.UseJev, routerCredential = Hash(config.RouterKey), jevCredential = Hash(config.JevKey)
     }));
     public static string? SecretIssue(string? key, bool required)
     {
