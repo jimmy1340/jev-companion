@@ -2,9 +2,11 @@
 
 审查基线是 `main` 上的 `33f670a`（已合并 PR #3「Clarify first-run credentials and clean-machine setup」）。PR #1、#2 是界面与发布流程，PR #3 已把缺失、空白、格式错误和 HTTP 401 的凭证提示分开，并写明干净机器上的工具链。本计划不重复那部分。
 
-约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1 已在本分支落地；Day 2–7 只记录，不在本次实现。
+约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2 已完成；Day 3–7 只记录，尚未实现。
 
 ## Day 1 — 2026-10-30：本机历史库权限
+
+**状态。** Done。已合并 [PR #4](https://github.com/jimmy1340/jev-companion/pull/4)。
 
 **问题。** `macos/backend/engine.py` 的 `History` 用 `mkdir(mode=0o700)` 和事后 `chmod(0o600)` 保护 `history.sqlite3`。SQLite 自己以 `0644` 创建数据库和回滚 journal，再套进程 umask。umask `0022` 不会去掉 other 的读位，所以 journal 在 `INSERT` 期间是 `0644`，里面有聊天原文页。`mkdir(exist_ok=True)` 也不会把已经存在的 `0755` 目录收紧。目录一旦可被其他用户进入，提交前的 journal 就能被读到。另外，库文件拒绝符号链接，但 `-journal` / `-wal` / `-shm` 没有同样的检查，SQLite 会顺着链接把页写到别处。
 
@@ -37,6 +39,8 @@
 **明确不做。** 不加密历史库，不拒绝「数据目录本身是符号链接」（用户可能把整个目录指到另一块盘），不用 `O_NOFOLLOW` 消除 lstat 与 open 之间的竞态。后两项见 Day 5。
 
 ## Day 2 — 2026-10-31：Windows 分析缓存键不要把两把密钥拼在一起
+
+**状态。** Done。见 [PR #6](https://github.com/jimmy1340/jev-companion/pull/6)。`PrefixKey` 对 `RouterKey` 和 `JevKey` 分别做 SHA-256，再写入缓存键，不再用 `\0` 把两把密钥拼成一个字符串。
 
 **问题。** `windows/Core/Models.cs` 的 `Contract.PrefixKey` 在哈希前把 `RouterKey + "\0" + JevKey` 拼成一个字符串。`RouterKey="a\0b"`、`JevKey="c"` 与 `RouterKey="a"`、`JevKey="b\0c"` 得到同一缓存键，一张分析卡可能被另一组凭证复用。PR #3 的 `SecretIssue` 会拒绝不可打印字符，所以从设置对话框保存的密钥碰不到这条路径；`PrefixKey` 本身不强制该规则，内存中的 `Connection` 仍可能带入 `\0`。
 

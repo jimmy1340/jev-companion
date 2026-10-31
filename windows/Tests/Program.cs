@@ -27,6 +27,12 @@ Check(Contract.PrefixKey(capture, 0, connection) == Contract.PrefixKey(extended,
 Check(Contract.PrefixKey(capture, 0, connection) != Contract.PrefixKey(capture with { Title = "另一个聊天" }, 0, connection), "conversation isolation");
 Check(Contract.PrefixKey(capture, 0, connection) != Contract.PrefixKey(capture, 0, connection with { Model = "different" }), "model change invalidates cards");
 Check(Contract.PrefixKey(capture, 0, connection) != Contract.PrefixKey(capture, 0, connection with { RouterKey = "new" }), "credentials change invalidates cards");
+Check(Contract.PrefixKey(capture, 0, connection) != Contract.PrefixKey(capture, 0, connection with { JevKey = "other" }), "Jev credential change invalidates cards");
+var nulBoundary = connection with { RouterKey = "a\0b", JevKey = "c" };
+var swappedBoundary = connection with { RouterKey = "a", JevKey = "b\0c" };
+Check(Contract.Hash(nulBoundary.RouterKey + "\0" + nulBoundary.JevKey) == Contract.Hash(swappedBoundary.RouterKey + "\0" + swappedBoundary.JevKey), "null-byte credential join collides");
+Check(Contract.PrefixKey(capture, 0, nulBoundary) != Contract.PrefixKey(capture, 0, swappedBoundary), "null-byte credential pairs stay distinct");
+Check(Contract.PrefixKey(capture, 0, nulBoundary) == Contract.PrefixKey(extended, 0, nulBoundary), "null-byte credentials keep earlier prefix stable");
 using (var payload = JsonDocument.Parse(JsonSerializer.Serialize(ModelClient.RouterPayload(connection, capture, 0))))
 {
     var data = payload.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!;
