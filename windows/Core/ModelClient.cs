@@ -6,18 +6,50 @@ namespace Jev;
 
 public sealed class ModelClient : IDisposable
 {
-    private readonly HttpClient http;
-    public ModelClient(HttpMessageHandler? handler = null)
+    private readonly HttpClient loopbackHttp;
+    private readonly HttpClient remoteHttp;
+    private readonly bool disposeInjectedHandlers;
+    public HttpMessageHandler LoopbackHandler { get; }
+    public HttpMessageHandler RemoteHandler { get; }
+
+    public ModelClient(HttpMessageHandler? handler = null, HttpMessageHandler? remoteHandler = null)
     {
-        http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(90) };
+        if (handler == null)
+        {
+            // Loopback 9Router must not send chat or Bearer tokens through a system proxy.
+            // TypeSafe HTTPS keeps the default proxy, same as typesafe_client.py, and still refuses redirects.
+            LoopbackHandler = new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false };
+            RemoteHandler = new HttpClientHandler { UseProxy = true, AllowAutoRedirect = false };
+            loopbackHttp = new HttpClient(LoopbackHandler) { Timeout = TimeSpan.FromSeconds(90) };
+            remoteHttp = new HttpClient(RemoteHandler) { Timeout = TimeSpan.FromSeconds(90) };
+            disposeInjectedHandlers = false;
+        }
+        else
+        {
+            LoopbackHandler = handler;
+            RemoteHandler = remoteHandler ?? handler;
+            disposeInjectedHandlers = true;
+            loopbackHttp = new HttpClient(LoopbackHandler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(90) };
+            remoteHttp = ReferenceEquals(RemoteHandler, LoopbackHandler)
+                ? loopbackHttp
+                : new HttpClient(RemoteHandler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(90) };
+        }
     }
-    public void Dispose() => http.Dispose();
+    public void Dispose()
+    {
+        loopbackHttp.Dispose();
+        if (!ReferenceEquals(remoteHttp, loopbackHttp)) remoteHttp.Dispose();
+        if (!disposeInjectedHandlers) return;
+        LoopbackHandler.Dispose();
+        if (!ReferenceEquals(RemoteHandler, LoopbackHandler)) RemoteHandler.Dispose();
+    }
+    private HttpClient ClientFor(Uri uri) => uri.IsLoopback ? loopbackHttp : remoteHttp;
     private async Task<JsonDocument> Send(Uri uri, string key, object? body, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(body == null ? HttpMethod.Get : HttpMethod.Post, uri);
         if (!string.IsNullOrEmpty(key)) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
         if (body != null) req.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        using var response = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await ClientFor(uri).SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException(Contract.DescribeHttpStatus((int)response.StatusCode, !string.IsNullOrEmpty(key)));
         using var stream = await response.Content.ReadAsStreamAsync(ct); using var buffer = new MemoryStream();
         var bytes = new byte[8192]; int count;

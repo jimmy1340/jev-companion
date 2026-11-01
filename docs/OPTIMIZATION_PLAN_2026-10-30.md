@@ -2,7 +2,7 @@
 
 审查基线是 `main` 上的 `33f670a`（已合并 PR #3「Clarify first-run credentials and clean-machine setup」）。PR #1、#2 是界面与发布流程，PR #3 已把缺失、空白、格式错误和 HTTP 401 的凭证提示分开，并写明干净机器上的工具链。本计划不重复那部分。
 
-约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2 已完成；Day 3–7 只记录，尚未实现。
+约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2、Day 3 已完成；Day 4–7 只记录，尚未实现。
 
 ## Day 1 — 2026-10-30：本机历史库权限
 
@@ -51,6 +51,8 @@
 **验收。** 新增一对会在 `\0` 拼接下碰撞、在新算法下分开的用例。现有前缀相等性测试继续通过。Linux 或 Windows 上执行 `dotnet run --project windows/Tests/Jev.Tests.csproj -c Release`。不调用网络。
 
 ## Day 3 — 2026-11-01：本机 9Router 不走系统代理
+
+**状态。** Done。见 [PR #7](https://github.com/jimmy1340/jev-companion/pull/7)。回环请求使用 `UseProxy = false` 且 `AllowAutoRedirect = false` 的处理器；`https://api.typesafe.ai` 仍使用默认代理且不跟随重定向。设置 `HTTP_PROXY` / `http_proxy` 后，`router_http` 仍直连测试夹具。
 
 **问题。** Python `router_http` 用 `http.client` 直连回环地址，不读 `HTTP_PROXY`。Windows `ModelClient` 的 `HttpClient` 默认使用系统代理，`http://127.0.0.1` 上的聊天和 `Bearer` 令牌可能被本机代理看到。TypeSafe 的远程 HTTPS 仍应允许代理，与 `typesafe_client.py` 一致。
 

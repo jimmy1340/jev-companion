@@ -58,6 +58,22 @@ using (var client = new ModelClient(handler))
     string error = ""; try { await client.Analyze(connection, capture, 0, CancellationToken.None); } catch (Exception e) { error = e.Message; }
     Check(error.Contains("401") && !error.Contains("test-secret"), "provider error body never leaked");
 }
+using (var client = new ModelClient())
+{
+    var loopback = (HttpClientHandler)client.LoopbackHandler;
+    var remote = (HttpClientHandler)client.RemoteHandler;
+    Check(!ReferenceEquals(loopback, remote) && !loopback.UseProxy && !loopback.AllowAutoRedirect, "loopback without proxy");
+    Check(remote.UseProxy && remote.Proxy == null && !remote.AllowAutoRedirect, "TypeSafe may still use proxy");
+}
+using (var loopback = new FixtureHandler(HttpStatusCode.OK, JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = valid } } } })))
+using (var remote = new FixtureHandler(HttpStatusCode.OK, "{}"))
+using (var client = new ModelClient(loopback, remote))
+{
+    var card = await client.Analyze(connection, capture, 0, CancellationToken.None);
+    Check(card.Provider.Contains("9Router") && loopback.Auth == "Bearer test-secret" && loopback.Uri == "http://127.0.0.1:20128/v1/chat/completions" && remote.Uri == null && remote.Auth == null, "loopback chat stays off the proxy handler");
+    string error = ""; try { await client.Analyze(connection with { UseJev = true, JevKey = "jev-fixture", Model = "" }, capture, 0, CancellationToken.None); } catch (Exception e) { error = e.Message; }
+    Check(remote.Uri == "https://api.typesafe.ai/v1/systemone" && remote.Auth == "Bearer jev-fixture" && loopback.Uri == "http://127.0.0.1:20128/v1/chat/completions" && !error.Contains("jev-fixture") && !error.Contains("test-secret"), "TypeSafe request stays on the proxy handler");
+}
 using (var handler = new FixtureHandler(HttpStatusCode.OK, "{}", true))
 using (var client = new ModelClient(handler))
 using (var cancel = new CancellationTokenSource(30))
