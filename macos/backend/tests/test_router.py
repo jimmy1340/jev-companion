@@ -137,6 +137,21 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "router_http_error")
         self.assertNotIn("SECRET", str(caught.exception))
 
+    def test_environment_proxy_does_not_receive_loopback_router(self):
+        with FixtureServer({"data": [{"id": "via-proxy"}]}) as proxy, FixtureServer({"data": [{"id": "via-fixture"}]}) as server:
+            proxy_url = "http://%s:%d" % proxy.server.server_address
+            self.assertNotEqual(proxy.server.server_address, server.server.server_address)
+            # Empty bypass list: a client that honors HTTP_PROXY must not skip this proxy for 127.0.0.1.
+            env = {"HTTP_PROXY": proxy_url, "http_proxy": proxy_url, "NO_PROXY": "", "no_proxy": "", "JEV_TEST_KEY": "SECRET_FIXTURE"}
+            with mock.patch.dict(engine.os.environ, env):
+                config = engine.router_config({"base_url": server.base_url, "model": "mock", "api_key_env": "JEV_TEST_KEY"})
+                result = engine.router_http(config, "models")
+        self.assertEqual(result["data"], [{"id": "via-fixture"}])
+        self.assertEqual(len(server.calls), 1)
+        self.assertEqual(server.calls[0]["path"], "/v1/models")
+        self.assertEqual(server.calls[0]["headers"]["Authorization"], "Bearer SECRET_FIXTURE")
+        self.assertEqual(proxy.calls, [])
+
     def test_environment_credential_header_and_redaction(self):
         echoed = generated()
         echoed["secretEcho"] = "SECRET_FIXTURE"
