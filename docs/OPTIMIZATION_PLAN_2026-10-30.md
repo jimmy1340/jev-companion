@@ -64,7 +64,7 @@
 
 ## Day 4 — 2026-11-02：历史检索按行缓存分词
 
-**状态。** Done。分支 `cursor/history-token-cache-6f67`。单次 `ranked_history` 按行文本缓存 token 集合；查询串仍只分词一次。得分、字面量子串加分、`-index` 次序和 `recent_context` 补齐不变，消息文本不截断。
+**状态。** Done。见 [PR #8](https://github.com/jimmy1340/jev-companion/pull/8)。单次 `ranked_history` 按行文本缓存 token 集合；查询串仍只分词一次。得分、字面量子串加分、`-index` 次序和 `recent_context` 补齐不变，消息文本不截断。
 
 **问题。** `ranked_history` 对最多 `MAX_HISTORY_SCAN`（5000）行各自调用 `tokens()`。同一次检索里重复计算，不改变排序规则也能去掉。
 
