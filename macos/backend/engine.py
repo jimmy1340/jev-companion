@@ -377,12 +377,17 @@ def tokens(text):
 def ranked_history(rows, query, limit=MAX_EVIDENCE, allow_recent=False):
     query_tokens = tokens(query)
     literal_query = query.strip().lower()
+    # Reuse token sets for repeated line text inside this call. Scores stay the same.
+    token_cache = {}
     ranked = []
     for index, row in enumerate(rows):
-        row_tokens = tokens(row["text"])
+        text = row["text"]
+        if text not in token_cache:
+            token_cache[text] = tokens(text)
+        row_tokens = token_cache[text]
         overlap = query_tokens & row_tokens
         score = len(overlap) / math.sqrt(max(1, len(query_tokens) * len(row_tokens)))
-        if literal_query and literal_query in row["text"].lower():
+        if literal_query and literal_query in text.lower():
             score += 1.0
         if score > 0:
             ranked.append((score, -index, {**row, "retrieval": "lexical_match"}))
