@@ -2,7 +2,7 @@
 
 审查基线是 `main` 上的 `33f670a`（已合并 PR #3「Clarify first-run credentials and clean-machine setup」）。PR #1、#2 是界面与发布流程，PR #3 已把缺失、空白、格式错误和 HTTP 401 的凭证提示分开，并写明干净机器上的工具链。本计划不重复那部分。
 
-约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2、Day 3 已完成；Day 4–7 只记录，尚未实现。
+约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2、Day 3、Day 4 已完成；Day 5–7 只记录，尚未实现。
 
 ## Day 1 — 2026-10-30：本机历史库权限
 
@@ -63,6 +63,8 @@
 **验收。** 现有 Windows 夹具仍证明密钥只出现在配置的 URI 上，401 响应体不进入错误文本。新增断言能区分「回环未使用代理」和「TypeSafe 仍可使用代理」。Python 套件继续全部通过。不访问真实 9Router 或 TypeSafe。
 
 ## Day 4 — 2026-11-02：历史检索按行缓存分词
+
+**状态。** Done。分支 `cursor/history-token-cache-6f67`。单次 `ranked_history` 按行文本缓存 token 集合；查询串仍只分词一次。得分、字面量子串加分、`-index` 次序和 `recent_context` 补齐不变，消息文本不截断。
 
 **问题。** `ranked_history` 对最多 `MAX_HISTORY_SCAN`（5000）行各自调用 `tokens()`。同一次检索里重复计算，不改变排序规则也能去掉。
 
