@@ -2,7 +2,7 @@
 
 审查基线是 `main` 上的 `33f670a`（已合并 PR #3「Clarify first-run credentials and clean-machine setup」）。PR #1、#2 是界面与发布流程，PR #3 已把缺失、空白、格式错误和 HTTP 401 的凭证提示分开，并写明干净机器上的工具链。本计划不重复那部分。
 
-约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2、Day 3、Day 4 已完成；Day 5–7 只记录，尚未实现。
+约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2、Day 3、Day 4、Day 5 已完成；Day 6、Day 7 只记录，尚未实现。
 
 ## Day 1 — 2026-10-30：本机历史库权限
 
@@ -76,13 +76,19 @@
 
 ## Day 5 — 2026-11-03：历史写入冲突与打开竞态
 
+**状态。** Done。
+
 **问题。** `History.save` 先 `SELECT` 再 `INSERT`。两个进程同时写入时，唯一约束会抛 `sqlite3.IntegrityError`，`main` 把它收成笼统的 `storage_error`，而不是现有的 `message_id_conflict`。Day 1 在 lstat 和 `sqlite3.connect` 之间仍有替换文件的窗口。
 
 **改动。** 在同一个写事务里捕获 `IntegrityError`，再读一次该行：内容一致则视为已存在，内容不一致则 `message_id_conflict`，并且整笔事务回滚（与现在的冲突测试一致）。若 Python 3.9 能用目录文件描述符或 `O_NOFOLLOW` 打开库文件且不改变普通文件行为，再收紧打开方式；做不到就在本计划里记一笔，不要用行为变化去换那一个竞态。
 
+**打开方式不改。** Python 3.9 的 `sqlite3.connect` 只接受路径，不能把目录文件描述符或 `os.open(..., O_NOFOLLOW)` 得到的 fd 交给 SQLite，标准库也没有 `SQLITE_OPEN_NOFOLLOW`。`file:/proc/self/fd/N` 和 `file:/dev/fd/N` 会被 SQLite 解析回路径再打开：普通文件仍有 lstat 到 connect 的窗口，路径一旦被换成符号链接就直接打开失败，并不会继续用已经打开的 inode，journal 也不再由那个 fd 决定。macOS 没有 `/proc/self/fd`。因此不改普通文件的打开行为。
+
 **涉及文件。** `macos/backend/engine.py`，`macos/backend/tests/test_engine.py`。
 
 **验收。** 用替身连接让第二次插入抛出 `IntegrityError`，原文仍在，错误码为 `message_id_conflict`。现有去重和冲突回滚测试通过。不新增加密，不改 Swift 调用参数。
+
+本次 `python3 -m unittest discover -s macos/backend/tests -v`：78 项通过（原先 76 项，新增 2 项）。打开方式与 Day 1 相同。
 
 ## Day 6 — 2026-11-04：Windows 模型响应不要把正文带进异常
 

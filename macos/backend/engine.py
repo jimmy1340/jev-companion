@@ -292,27 +292,41 @@ class History:
 
     def save(self, request):
         # Keep the restrictive umask until commit so the rollback journal is 0600.
+        def same_stored(stored, message):
+            return stored is not None and (
+                stored["sender"], stored["text"], stored["timestamp"]
+            ) == (message["sender"], message["text"], message.get("timestamp"))
+
+        def conflict():
+            fail("message_id_conflict", "消息 id 对应的原文发生变化；原记录已保留，请重新读取会话。")
+
+        lookup = "SELECT sender, text, timestamp FROM messages WHERE conversation_id=? AND message_key=?"
         with private_umask():
             conn = self._open_write()
             inserted = 0
             try:
                 with conn:
                     for key, message in message_keys(request["messages"]):
-                        existing = conn.execute(
-                            "SELECT sender, text, timestamp FROM messages WHERE conversation_id=? AND message_key=?",
-                            (request["conversation_id"], key),
-                        ).fetchone()
-                        if existing:
-                            if (existing["sender"], existing["text"], existing["timestamp"]) != (
-                                    message["sender"], message["text"], message.get("timestamp")):
-                                fail("message_id_conflict", "消息 id 对应的原文发生变化；原记录已保留，请重新读取会话。")
+                        stored = conn.execute(lookup, (request["conversation_id"], key)).fetchone()
+                        if stored is not None:
+                            if not same_stored(stored, message):
+                                conflict()
                             continue
-                        conn.execute("""INSERT INTO messages
-                            (conversation_id, conversation_title, message_key, sender, text, timestamp, source, observed_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
-                                request["conversation_id"], request["conversation_title"], key,
-                                message["sender"], message["text"], message.get("timestamp"),
-                                request["source"], datetime.now(timezone.utc).isoformat()))
+                        try:
+                            conn.execute("""INSERT INTO messages
+                                (conversation_id, conversation_title, message_key, sender, text, timestamp, source, observed_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
+                                    request["conversation_id"], request["conversation_title"], key,
+                                    message["sender"], message["text"], message.get("timestamp"),
+                                    request["source"], datetime.now(timezone.utc).isoformat()))
+                        except sqlite3.IntegrityError:
+                            # Another writer can commit this key between SELECT and INSERT.
+                            # Re-read inside the same transaction: identical content is the
+                            # dedupe path; different content rolls the whole save back.
+                            stored = conn.execute(lookup, (request["conversation_id"], key)).fetchone()
+                            if same_stored(stored, message):
+                                continue
+                            conflict()
                         inserted += 1
                 for sidecar in self._sidecars():
                     self._chmod_regular(sidecar, 0o600, required=False)

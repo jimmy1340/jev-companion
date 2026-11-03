@@ -24,6 +24,56 @@ def request(conversation="chat-a", texts=None, save=True, consent=True):
             "source": "manual", "save_history": save, "confirmed_cloud": consent}
 
 
+class _NoRow:
+    def fetchone(self):
+        return None
+
+
+class RacingInsertConnection:
+    """SQLite connection whose Nth INSERT raises IntegrityError.
+
+    The existence SELECT while that insert is still pending returns no row,
+    which is the race save() must handle. The SELECT after the error is the
+    in-transaction re-read and reaches the real database.
+    """
+
+    def __init__(self, real, fail_on_insert):
+        object.__setattr__(self, "_real", real)
+        object.__setattr__(self, "_fail_on_insert", fail_on_insert)
+        object.__setattr__(self, "_inserts", 0)
+        object.__setattr__(self, "raised", False)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_") or name == "raised":
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._real, name, value)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def __enter__(self):
+        self._real.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return self._real.__exit__(exc_type, exc, tb)
+
+    def execute(self, sql, parameters=()):
+        statement = sql.lstrip()
+        if statement.startswith("INSERT"):
+            count = self._inserts + 1
+            object.__setattr__(self, "_inserts", count)
+            if count == self._fail_on_insert:
+                self.raised = True
+                raise sqlite3.IntegrityError("UNIQUE constraint failed")
+            return self._real.execute(sql, parameters)
+        if (statement.startswith("SELECT") and "message_key=?" in statement
+                and self._inserts == self._fail_on_insert - 1):
+            return _NoRow()
+        return self._real.execute(sql, parameters)
+
+
 def response(action="clarify", score=1.6):
     # Deliberately synthetic numbers test decoding; the product never exposes these.
     return {"model": "jev-test-fixture", "answers": {
@@ -76,6 +126,42 @@ class EngineTests(unittest.TestCase):
                              {"id": "m-1", "sender": "other", "text": "改变了的原文"}])
         with self.assertRaisesRegex(engine.EngineError, "原记录已保留"):
             self.history.save(new)
+        self.assertEqual(self.history.stats()["messages"], 1)
+        self.assertEqual(self.history.recent("chat-a")[0]["text"], "周末一起吃饭吗？")
+
+    def _save_with_racing_insert(self, value, fail_on_insert):
+        real_connect = engine.sqlite3.connect
+
+        def connect(*args, **kwargs):
+            self.racing = RacingInsertConnection(real_connect(*args, **kwargs), fail_on_insert)
+            return self.racing
+
+        with mock.patch.object(engine.sqlite3, "connect", connect):
+            return self.history.save(value)
+
+    def test_second_insert_integrity_error_is_message_id_conflict(self):
+        self.history.save(request())
+        new = request(texts=[{"id": "m-2", "sender": "self", "text": "新的"},
+                             {"id": "m-1", "sender": "other", "text": "改变了的原文"}])
+        with self.assertRaises(engine.EngineError) as caught:
+            self._save_with_racing_insert(new, 2)
+        self.assertEqual(caught.exception.code, "message_id_conflict")
+        self.assertIn("原记录已保留", caught.exception.message)
+        self.assertNotIn("周末", caught.exception.message)
+        self.assertNotIn("改变了", caught.exception.message)
+        self.assertTrue(self.racing.raised)
+        self.assertEqual(self.racing._inserts, 2)
+        self.assertEqual(self.history.stats()["messages"], 1)
+        stored = self.history.recent("chat-a")
+        self.assertEqual(stored[0]["text"], "周末一起吃饭吗？")
+        self.assertNotIn("新的", json.dumps(stored, ensure_ascii=False))
+
+    def test_integrity_error_same_content_is_already_stored(self):
+        self.assertEqual(self.history.save(request()), 1)
+        saved = self._save_with_racing_insert(request(), 1)
+        self.assertTrue(self.racing.raised)
+        self.assertEqual(self.racing._inserts, 1)
+        self.assertEqual(saved, 0)
         self.assertEqual(self.history.stats()["messages"], 1)
         self.assertEqual(self.history.recent("chat-a")[0]["text"], "周末一起吃饭吗？")
 
