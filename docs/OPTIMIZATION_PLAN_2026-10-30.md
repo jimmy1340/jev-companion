@@ -76,7 +76,7 @@
 
 ## Day 5 — 2026-11-03：历史写入冲突与打开竞态
 
-**状态。** Done。
+**状态。** Done。见 [PR #9](https://github.com/jimmy1340/jev-companion/pull/9)。
 
 **问题。** `History.save` 先 `SELECT` 再 `INSERT`。两个进程同时写入时，唯一约束会抛 `sqlite3.IntegrityError`，`main` 把它收成笼统的 `storage_error`，而不是现有的 `message_id_conflict`。Day 1 在 lstat 和 `sqlite3.connect` 之间仍有替换文件的窗口。
 
