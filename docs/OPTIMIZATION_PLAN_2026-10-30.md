@@ -2,7 +2,7 @@
 
 审查基线是 `main` 上的 `33f670a`（已合并 PR #3「Clarify first-run credentials and clean-machine setup」）。PR #1、#2 是界面与发布流程，PR #3 已把缺失、空白、格式错误和 HTTP 401 的凭证提示分开，并写明干净机器上的工具链。本计划不重复那部分。
 
-约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2、Day 3、Day 4、Day 5 已完成；Day 6、Day 7 只记录，尚未实现。
+约束：每天只做小改动，保持现有分析、授权、会话隔离和「不自动发送微信」的行为。不引入依赖，不重构 SwiftUI / WPF。能在 Linux 上用现有测试项目验证的项优先。Day 1、Day 2、Day 3、Day 4、Day 5、Day 6 已完成；Day 7 只记录，尚未实现。
 
 ## Day 1 — 2026-10-30：本机历史库权限
 
@@ -92,6 +92,8 @@
 
 ## Day 6 — 2026-11-04：Windows 模型响应不要把正文带进异常
 
+**状态。** Done。见 [PR #10](https://github.com/jimmy1340/jev-companion/pull/10)。解析失败抛出固定中文 `InvalidOperationException`，不附带响应正文；草稿拒绝 `\n`、`\t` 以外的控制字符。
+
 **问题。** `ModelClient.Send` 直接 `JsonDocument.Parse`。解析失败时 `JsonException` 的消息可能含响应片段。界面上的 `Friendly` 会挡住 `JsonException`，但异常对象本身仍带着正文。Python `parse_model_drafts` 会拒绝除换行和制表符以外的控制字符；Windows `ParseRouter` 没有这一步，草稿可以带终端控制符进 WPF。
 
 **改动。** 解析失败时抛出固定中文 `InvalidOperationException`，消息不含响应体和密钥。草稿字符串拒绝 `\n`、`\t` 以外的控制字符，长度规则不变。合法的 ` ```json ` 围栏仍可解析。
@@ -99,6 +101,8 @@
 **涉及文件。** `windows/Core/ModelClient.cs`，`windows/Core/Models.cs`，`windows/Tests/Program.cs`。
 
 **验收。** 夹具返回 `not-json` 加哨兵字符串时，异常消息不含哨兵。含 `\u001b` 的草稿被拒绝；现有围栏 JSON 和概率分布测试仍通过。`dotnet run --project windows/Tests/Jev.Tests.csproj -c Release`。
+
+本次 `dotnet run --project windows/Tests/Jev.Tests.csproj -c Release`：78 checks passed（原先 72 项，新增 6 项）。
 
 ## Day 7 — 2026-11-05：CI 依赖钉死，不改产品行为
 
