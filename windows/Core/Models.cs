@@ -124,6 +124,7 @@ public static class Contract
                 (m.Sender != "self" && m.Sender != "other" && m.Sender != "unknown")))
             throw new InvalidOperationException("请提供 1–200 条文字，每条不超过 6000 字，总计不超过 60000 字。");
     }
+    public const string InvalidModelJson = "模型返回格式不符合要求，请重试或更换模型。";
     public static double Number(JsonElement element, double max = 1)
     {
         if (element.ValueKind != JsonValueKind.Number || !element.TryGetDouble(out var n) || !double.IsFinite(n) || n < 0 || n > max)
@@ -134,7 +135,10 @@ public static class Contract
     {
         text = text.Trim();
         if (text.StartsWith("```")) { var start = text.IndexOf('\n'); var end = text.LastIndexOf("```"); if (start >= 0 && end > start) text = text[(start + 1)..end]; }
-        using var doc = JsonDocument.Parse(text); var r = doc.RootElement;
+        JsonDocument parsed;
+        try { parsed = JsonDocument.Parse(text); }
+        catch (JsonException) { throw new InvalidOperationException(InvalidModelJson); }
+        using var doc = parsed; var r = doc.RootElement;
         List<Probability> ReadArray(string name, string[] labels, bool sum)
         {
             var values = r.GetProperty(name).EnumerateArray().Select(e => Number(e)).ToArray();
@@ -143,7 +147,7 @@ public static class Contract
         }
         var needs = ReadArray("needs", NeedLabels, false); var actions = ReadArray("actions", ActionLabels, true);
         var drafts = r.GetProperty("drafts").EnumerateArray().Select(e => e.GetString() ?? "").ToArray();
-        if (drafts.Length != 2 || drafts.Any(d => string.IsNullOrWhiteSpace(d) || d.Length > 1200)) throw new InvalidOperationException("模型没有返回两条有效回复。");
+        if (drafts.Length != 2 || drafts.Any(d => string.IsNullOrWhiteSpace(d) || d.Length > 1200 || d.Any(c => c < ' ' && c != '\n' && c != '\t'))) throw new InvalidOperationException("模型没有返回两条有效回复。");
         return new(needs, actions, Number(r.GetProperty("history")), Number(r.GetProperty("settled")),
             Number(r.GetProperty("tension"), 10), drafts, "9Router · " + model);
     }

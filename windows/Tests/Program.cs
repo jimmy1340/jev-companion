@@ -42,6 +42,20 @@ using (var payload = JsonDocument.Parse(JsonSerializer.Serialize(ModelClient.Rou
 var judgment = Contract.ParseRouter(valid, "test");
 Check(judgment.Needs.Count == 4 && judgment.Actions.Count == 6 && judgment.Drafts.Length == 2, "typed router response");
 Check(Contract.ParseRouter("```json\n" + valid + "\n```", "test").Tension == 2.5, "JSON code fence accepted");
+string RouterBody(string first) => JsonSerializer.Serialize(new { needs = new[] { .7, .2, .1, .05 }, actions = new[] { .1, .3, .2, .25, .05, .1 }, history = .2, settled = .6, tension = 2.5, drafts = new[] { first, "你想先定时间还是地点？" } });
+Check(Contract.ParseRouter(RouterBody("好，\n我们\t具体商量一下。"), "test").Drafts[0] == "好，\n我们\t具体商量一下。", "newline and tab remain in drafts");
+Check(Contract.ParseRouter(RouterBody(new string('啊', 1200)), "test").Drafts[0].Length == 1200, "draft length 1200 still accepted");
+Reject(() => Contract.ParseRouter(RouterBody(new string('啊', 1201)), "test"), "draft length 1201 still rejected");
+string controlMessage = "";
+try { Contract.ParseRouter(RouterBody("好，我们具体商量一下。\u001b"), "test"); }
+catch (Exception e) { controlMessage = e.Message; }
+Check(controlMessage == "模型没有返回两条有效回复。" && !controlMessage.Contains("\u001b"), "draft with ESC rejected");
+const string bodySentinel = "SENTINEL-BODY-7c2e";
+Exception? routerParse = null;
+try { Contract.ParseRouter("not-json " + bodySentinel, "test"); }
+catch (Exception e) { routerParse = e; }
+var routerText = routerParse?.ToString() ?? "";
+Check(routerParse is InvalidOperationException && routerParse.InnerException == null && routerParse.Message == Contract.InvalidModelJson && !routerText.Contains(bodySentinel) && !routerText.Contains("not-json"), "router parse failure hides model text");
 Reject(() => Contract.ParseRouter(valid.Replace("0.7", "1.7"), "test"), "out-of-range probability rejected");
 Reject(() => Contract.ParseRouter(valid.Replace("0.25", "0.75"), "test"), "bad action distribution rejected");
 Reject(() => Contract.ParseRouter("{}", "test"), "missing results never fabricated");
@@ -57,6 +71,13 @@ using (var client = new ModelClient(handler))
 {
     string error = ""; try { await client.Analyze(connection, capture, 0, CancellationToken.None); } catch (Exception e) { error = e.Message; }
     Check(error.Contains("401") && !error.Contains("test-secret"), "provider error body never leaked");
+}
+using (var handler = new FixtureHandler(HttpStatusCode.OK, "not-json " + bodySentinel))
+using (var client = new ModelClient(handler))
+{
+    Exception? thrown = null; try { await client.Analyze(connection, capture, 0, CancellationToken.None); } catch (Exception e) { thrown = e; }
+    var error = thrown?.ToString() ?? "";
+    Check(thrown is InvalidOperationException && thrown.InnerException == null && thrown.Message == Contract.InvalidModelJson && !error.Contains(bodySentinel) && !error.Contains("not-json") && !error.Contains(connection.RouterKey), "invalid model JSON hides response body");
 }
 using (var client = new ModelClient())
 {
