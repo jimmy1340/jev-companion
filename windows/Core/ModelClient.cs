@@ -54,7 +54,9 @@ public sealed class ModelClient : IDisposable
         using var stream = await response.Content.ReadAsStreamAsync(ct); using var buffer = new MemoryStream();
         var bytes = new byte[8192]; int count;
         while ((count = await stream.ReadAsync(bytes, ct)) > 0) { if (buffer.Length + count > 1_048_576) throw new InvalidOperationException("模型返回内容过大。"); buffer.Write(bytes, 0, count); }
-        return JsonDocument.Parse(buffer.ToArray());
+        // JsonException can quote the invalid literal, so a parse failure must not carry the response body.
+        try { return JsonDocument.Parse(buffer.ToArray()); }
+        catch (JsonException) { throw new InvalidOperationException(Contract.InvalidModelJson); }
     }
     public async Task<string[]> Models(Connection c, CancellationToken ct)
     {
